@@ -1,9 +1,39 @@
-const { TMDB_BASE, TMDB_IMAGE_BASE } = require('./config')
+const crypto = require('crypto')
+const { TMDB_BASE, TMDB_IMAGE_BASE, TMDB_CACHE_TTL_SECONDS, TMDB_NEGATIVE_CACHE_TTL_SECONDS } = require('./config')
 const { getJson } = require('./httpUtils')
+const redis = require('./redisClient')
 
 const cache = new Map()
 const imagesCache = new Map()
 const findCache = new Map()
+async function cachedLookup(ns, l1, l1key, fetchFn) {
+  if (l1.has(l1key)) return l1.get(l1key)
+  const rk = `tmdb:${ns}:${crypto.createHash('sha1').update(l1key).digest('hex')}`
+  if (redis) {
+    try {
+      const raw = await redis.get(rk)
+      if (raw != null) {
+        const value = JSON.parse(raw)
+        l1.set(l1key, value)
+        return value
+      }
+    } catch {
+      // fall through to a live fetch on any Redis error
+    }
+  }
+  const value = await fetchFn()
+  l1.set(l1key, value)
+  if (redis) {
+    // Cache "no match"/errors only briefly so late-arriving TMDB entries surface soon.
+    const ttl = value == null ? TMDB_NEGATIVE_CACHE_TTL_SECONDS : TMDB_CACHE_TTL_SECONDS
+    try {
+      await redis.set(rk, JSON.stringify(value), 'EX', ttl)
+    } catch {
+      // caching is best-effort
+    }
+  }
+  return value
+}
 
 async function searchOnce(title, year, kind, apiKey) {
   const params = new URLSearchParams({ api_key: apiKey, query: title })
@@ -17,15 +47,13 @@ async function searchOnce(title, year, kind, apiKey) {
 
 async function search(title, year, kind, apiKey) {
   const key = `${kind}|${title.trim().toLowerCase()}|${year || ''}`
-  if (cache.has(key)) return cache.get(key)
-
-  let result = await searchOnce(title, year, kind, apiKey)
-  if (!result && year) {
-    result = await searchOnce(title, null, kind, apiKey)
-  }
-
-  cache.set(key, result)
-  return result
+  return cachedLookup('s', cache, key, async () => {
+    let result = await searchOnce(title, year, kind, apiKey)
+    if (!result && year) {
+      result = await searchOnce(title, null, kind, apiKey)
+    }
+    return result
+  })
 }
 
 function posterUrl(result) {
@@ -35,17 +63,13 @@ function posterUrl(result) {
 
 async function getImages(kind, tmdbId, apiKey) {
   const key = `${kind}:${tmdbId}`
-  if (imagesCache.has(key)) return imagesCache.get(key)
-
-  let result = null
-  try {
-    result = await getJson(`${TMDB_BASE}/${kind}/${tmdbId}/images?api_key=${apiKey}`)
-  } catch {
-    result = null
-  }
-
-  imagesCache.set(key, result)
-  return result
+  return cachedLookup('i', imagesCache, key, async () => {
+    try {
+      return await getJson(`${TMDB_BASE}/${kind}/${tmdbId}/images?api_key=${apiKey}`)
+    } catch {
+      return null
+    }
+  })
 }
 
 /** Prefer a logo in the title's own language, then a language-neutral one, then English. */
@@ -59,21 +83,17 @@ function logoUrl(images, originalLanguage) {
 
 async function findByImdbId(imdbId, apiKey) {
   const key = `find:${imdbId}`
-  if (findCache.has(key)) return findCache.get(key)
-
-  let result = null
-  try {
-    const url = `${TMDB_BASE}/find/${imdbId}?api_key=${apiKey}&external_source=imdb_id`
-    const data = await getJson(url)
-    const movie = (data && data.movie_results && data.movie_results[0]) || null
-    const tv = (data && data.tv_results && data.tv_results[0]) || null
-    result = movie ? { kind: 'movie', result: movie } : tv ? { kind: 'tv', result: tv } : null
-  } catch {
-    result = null
-  }
-
-  findCache.set(key, result)
-  return result
+  return cachedLookup('f', findCache, key, async () => {
+    try {
+      const url = `${TMDB_BASE}/find/${imdbId}?api_key=${apiKey}&external_source=imdb_id`
+      const data = await getJson(url)
+      const movie = (data && data.movie_results && data.movie_results[0]) || null
+      const tv = (data && data.tv_results && data.tv_results[0]) || null
+      return movie ? { kind: 'movie', result: movie } : tv ? { kind: 'tv', result: tv } : null
+    } catch {
+      return null
+    }
+  })
 }
 
 function clearCache() {

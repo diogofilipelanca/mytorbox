@@ -1,10 +1,16 @@
 const crypto = require('crypto')
+const zlib = require('zlib')
 const { SOURCES, fetchMylist, buildStreamUrl } = require('./torbox')
-const { parseWorkItems, slugify } = require('./parser')
+const { parseWorkItems, slugify, makeGuessResolver } = require('./parser')
 const tmdb = require('./tmdb')
 const rpdb = require('./rpdb')
 const redis = require('./redisClient')
-const { LIBRARY_TTL_MS } = require('./config')
+const {
+  LIBRARY_CHECK_INTERVAL_MS,
+  LIBRARY_HARD_TTL_MS,
+  PARSE_CACHE_TTL_SECONDS,
+  MAX_CACHE_VALUE_BYTES,
+} = require('./config')
 
 const TMDB_CONCURRENCY = 5
 
@@ -98,14 +104,36 @@ function sortedBySize(items) {
   return [...items].sort((a, b) => (b.size || 0) - (a.size || 0))
 }
 
-async function buildLibrary(torboxKey, tmdbKey, rpdbKey) {
-  const workItems = []
+async function fetchEntriesBySource(torboxKey, bypassCache = false) {
+  const bySource = {}
   for (const source of SOURCES) {
-    const entries = await fetchMylist(source, torboxKey)
-    for (const entry of entries) {
-      workItems.push(...parseWorkItems(source, entry))
+    bySource[source] = await fetchMylist(source, torboxKey, { bypassCache })
+  }
+  return bySource
+}
+
+function fingerprintEntries(entriesBySource) {
+  const parts = []
+  for (const source of SOURCES) {
+    for (const e of entriesBySource[source] || []) {
+      parts.push(`${source}:${e.id}:${e.updated_at || e.created_at || ''}`)
     }
   }
+  parts.sort()
+  return `${parts.length}:${crypto.createHash('sha1').update(parts.join('|')).digest('hex')}`
+}
+
+async function buildLibrary(torboxKey, tmdbKey, rpdbKey, entriesBySource = null, cacheKey = null) {
+  const bySource = entriesBySource || (await fetchEntriesBySource(torboxKey))
+
+  const resolver = makeGuessResolver(await loadParseCache(cacheKey))
+  const workItems = []
+  for (const source of SOURCES) {
+    for (const entry of bySource[source] || []) {
+      workItems.push(...parseWorkItems(source, entry, resolver))
+    }
+  }
+  await saveParseCache(cacheKey, resolver.current)
 
   const movieGroups = new Map()
   const seriesGroups = new Map()
@@ -212,7 +240,7 @@ async function buildLibrary(torboxKey, tmdbKey, rpdbKey) {
 }
 
 // Falls back to this in-process Map only when Redis isn't configured (e.g. local dev without REDIS_URL).
-const memCache = new Map() // sha256(`${torboxKey}|${tmdbKey}|${rpdbKey}`) -> { lib, cachedAt }
+const memCache = new Map() // sha256(`${torboxKey}|${tmdbKey}|${rpdbKey}`) -> { record, storedAt }
 const buildLocks = new Map()
 
 // Redis/memory keys are hashed rather than built from the raw keys directly —
@@ -222,55 +250,130 @@ function cacheKeyFor(torboxKey, tmdbKey, rpdbKey) {
   return crypto.createHash('sha256').update(`${torboxKey}|${tmdbKey}|${rpdbKey || ''}`).digest('hex')
 }
 
-const LIBRARY_TTL_SECONDS = Math.floor(LIBRARY_TTL_MS / 1000)
+const LIBRARY_HARD_TTL_SECONDS = Math.floor(LIBRARY_HARD_TTL_MS / 1000)
 
 function redisKeyFor(cacheKey) {
   return `lib:${cacheKey}`
 }
 
-async function getCachedLib(cacheKey) {
+function parseCacheKeyFor(cacheKey) {
+  return `pc:${cacheKey}`
+}
+const GZIP_PREFIX = 'gz:'
+
+function packValue(obj) {
+  return GZIP_PREFIX + zlib.gzipSync(Buffer.from(JSON.stringify(obj))).toString('base64')
+}
+
+function unpackValue(raw) {
+  if (typeof raw !== 'string') return null
+  if (raw.startsWith(GZIP_PREFIX)) {
+    return JSON.parse(zlib.gunzipSync(Buffer.from(raw.slice(GZIP_PREFIX.length), 'base64')).toString())
+  }
+  return JSON.parse(raw) // legacy uncompressed entry
+}
+
+// True if a packed value is too big to safely store. Returns [tooBig, packed].
+function packWithLimit(obj) {
+  const packed = packValue(obj)
+  return [Buffer.byteLength(packed) > MAX_CACHE_VALUE_BYTES, packed]
+}
+
+async function getCachedRecord(cacheKey) {
   if (redis) {
     try {
       const raw = await redis.get(redisKeyFor(cacheKey))
-      return raw ? JSON.parse(raw) : null
+      return raw ? unpackValue(raw) : null
     } catch (err) {
       console.warn('library: redis get failed, treating as cache miss:', err.message)
       return null
     }
   }
   const entry = memCache.get(cacheKey)
-  return entry && Date.now() - entry.cachedAt < LIBRARY_TTL_MS ? entry.lib : null
+  if (!entry) return null
+  if (Date.now() - entry.storedAt >= LIBRARY_HARD_TTL_MS) {
+    memCache.delete(cacheKey)
+    return null
+  }
+  return entry.record
 }
 
-async function setCachedLib(cacheKey, lib) {
+async function setCachedRecord(cacheKey, record) {
   if (redis) {
     try {
-      await redis.set(redisKeyFor(cacheKey), JSON.stringify(lib), 'EX', LIBRARY_TTL_SECONDS)
+      const [tooBig, packed] = packWithLimit(record)
+      if (tooBig) {
+        console.warn('library: skipping cache write, library too large even compressed')
+        return
+      }
+      await redis.set(redisKeyFor(cacheKey), packed, 'EX', LIBRARY_HARD_TTL_SECONDS)
       return
     } catch (err) {
       console.warn('library: redis set failed:', err.message)
       return
     }
   }
-  memCache.set(cacheKey, { lib, cachedAt: Date.now() })
+  memCache.set(cacheKey, { record, storedAt: Date.now() })
+}
+
+async function loadParseCache(cacheKey) {
+  const map = new Map()
+  if (!redis || !cacheKey) return map
+  try {
+    const raw = await redis.get(parseCacheKeyFor(cacheKey))
+    if (raw) {
+      const obj = unpackValue(raw)
+      for (const k of Object.keys(obj)) map.set(k, obj[k])
+    }
+  } catch (err) {
+    console.warn('library: parse cache load failed:', err.message)
+  }
+  return map
+}
+
+async function saveParseCache(cacheKey, map) {
+  if (!redis || !cacheKey || !map || map.size === 0) return
+  try {
+    const obj = {}
+    for (const [k, v] of map) obj[k] = v
+    const [tooBig, packed] = packWithLimit(obj)
+    if (tooBig) {
+      console.warn('library: skipping parse-cache write, blob too large even compressed')
+      return
+    }
+    await redis.set(parseCacheKeyFor(cacheKey), packed, 'EX', PARSE_CACHE_TTL_SECONDS)
+  } catch (err) {
+    console.warn('library: parse cache save failed:', err.message)
+  }
 }
 
 async function getLibrary(torboxKey, tmdbKey, rpdbKey = null, force = false) {
   const cacheKey = cacheKeyFor(torboxKey, tmdbKey, rpdbKey)
 
-  if (!force) {
-    const cached = await getCachedLib(cacheKey)
-    if (cached) return cached
+  const cached = await getCachedRecord(cacheKey)
+  if (!force && cached && cached.lib && Date.now() - cached.validatedAt < LIBRARY_CHECK_INTERVAL_MS) {
+    return cached.lib
   }
 
+  // Serialize concurrent (re)validations per user so a burst of requests triggers at
+  // most one TorBox fetch / rebuild.
   const prevLock = buildLocks.get(cacheKey) || Promise.resolve()
   const run = prevLock.then(async () => {
-    if (!force) {
-      const cachedAfterWait = await getCachedLib(cacheKey)
-      if (cachedAfterWait) return cachedAfterWait
+    const fresh = await getCachedRecord(cacheKey)
+    if (!force && fresh && fresh.lib && Date.now() - fresh.validatedAt < LIBRARY_CHECK_INTERVAL_MS) {
+      return fresh.lib
     }
-    const lib = await buildLibrary(torboxKey, tmdbKey, rpdbKey)
-    await setCachedLib(cacheKey, lib)
+
+    const entriesBySource = await fetchEntriesBySource(torboxKey, force)
+    const fingerprint = fingerprintEntries(entriesBySource)
+
+    if (!force && fresh && fresh.lib && fresh.fingerprint === fingerprint) {
+      
+      await setCachedRecord(cacheKey, { lib: fresh.lib, fingerprint, validatedAt: Date.now() })
+      return fresh.lib
+    }
+    const lib = await buildLibrary(torboxKey, tmdbKey, rpdbKey, entriesBySource, cacheKey)
+    await setCachedRecord(cacheKey, { lib, fingerprint, validatedAt: Date.now() })
     return lib
   })
   const settled = run.then(() => {}, () => {})
@@ -285,8 +388,14 @@ async function clearCache() {
   memCache.clear()
   if (redis) {
     try {
-      const keys = await redis.keys('lib:*')
-      if (keys.length) await redis.del(...keys)
+      const all = [
+        ...(await redis.keys('lib:*')),
+        ...(await redis.keys('pc:*')),
+        ...(await redis.keys('tmdb:*')),
+      ]
+      for (let i = 0; i < all.length; i += 500) {
+        await redis.del(...all.slice(i, i + 500))
+      }
     } catch (err) {
       console.warn('library: redis clearCache failed:', err.message)
     }

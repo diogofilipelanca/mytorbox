@@ -13,7 +13,25 @@ const TMDB_BASE = 'https://api.themoviedb.org/3'
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500'
 const RPDB_BASE = 'https://api.ratingposterdb.com'
 
-const LIBRARY_TTL_MS = 15 * 60 * 1000
+const LIBRARY_CHECK_INTERVAL_MS = 30 * 60 * 1000
+// Hard expiry for a cached library — evicts inactive users; refreshed on every check.
+const LIBRARY_HARD_TTL_MS = 24 * 60 * 60 * 1000
+// guessit(filename) is deterministic and filenames are immutable, so parse results
+// can be cached for a long time (namespace bumped if the parser logic changes).
+const PARSE_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60
+// TMDB search/image lookups are stable public data — cache across rebuilds and users.
+const TMDB_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
+// TorBox /mylist paginates at 1000 items per page by default.
+const TORBOX_PAGE_LIMIT = 1000
+// Safety cap on pagination so a misbehaving API (e.g. one that ignores offset) can't
+// loop forever — 50k items is far beyond any real library.
+const TORBOX_MAX_PAGES = 50
+// A genuine "no TMDB match" (or a transient error) is cached only briefly so newly
+// added TMDB entries appear soon, unlike successful lookups which are stable.
+const TMDB_NEGATIVE_CACHE_TTL_SECONDS = 6 * 60 * 60
+// Skip caching values larger than this — keeps writes safely under the hosted-Redis
+// (Upstash) per-request size ceiling. Library blobs are gzipped, so this is generous.
+const MAX_CACHE_VALUE_BYTES = 900 * 1024
 const CATALOG_PAGE_SIZE = 100
 const VIDEO_EXTENSIONS = new Set(['.mkv', '.mp4', '.avi', '.mov', '.m4v', '.webm', '.ts', '.flv'])
 const MIN_FILE_SIZE_BYTES = 500 * 1024 * 1024
@@ -48,7 +66,14 @@ module.exports = {
   TMDB_BASE,
   TMDB_IMAGE_BASE,
   RPDB_BASE,
-  LIBRARY_TTL_MS,
+  LIBRARY_CHECK_INTERVAL_MS,
+  LIBRARY_HARD_TTL_MS,
+  PARSE_CACHE_TTL_SECONDS,
+  TMDB_CACHE_TTL_SECONDS,
+  TMDB_NEGATIVE_CACHE_TTL_SECONDS,
+  TORBOX_PAGE_LIMIT,
+  TORBOX_MAX_PAGES,
+  MAX_CACHE_VALUE_BYTES,
   CATALOG_PAGE_SIZE,
   VIDEO_EXTENSIONS,
   MIN_FILE_SIZE_BYTES,

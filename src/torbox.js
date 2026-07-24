@@ -1,4 +1,4 @@
-const { TORBOX_BASE, VIDEO_EXTENSIONS } = require('./config')
+const { TORBOX_BASE, VIDEO_EXTENSIONS, TORBOX_PAGE_LIMIT, TORBOX_MAX_PAGES } = require('./config')
 const { getJson } = require('./httpUtils')
 
 const SOURCES = ['torrents', 'webdl']
@@ -10,10 +10,17 @@ function headers(apiKey) {
   }
 }
 
-async function fetchMylist(source, apiKey) {
-  const url = `${TORBOX_BASE}/${source}/mylist?bypass_cache=true`
-  const data = await getJson(url, { headers: headers(apiKey) })
-  return (data && data.data) || []
+async function fetchMylist(source, apiKey, { bypassCache = false } = {}) {
+  const all = []
+  for (let page = 0; page < TORBOX_MAX_PAGES; page++) {
+    const offset = page * TORBOX_PAGE_LIMIT
+    const url = `${TORBOX_BASE}/${source}/mylist?bypass_cache=${bypassCache}&limit=${TORBOX_PAGE_LIMIT}&offset=${offset}`
+    const data = await getJson(url, { headers: headers(apiKey) })
+    const items = (data && data.data) || []
+    all.push(...items)
+    if (items.length < TORBOX_PAGE_LIMIT) break
+  }
+  return all
 }
 
 function isVideo(filename) {

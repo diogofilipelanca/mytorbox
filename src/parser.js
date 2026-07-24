@@ -50,9 +50,24 @@ function fixTruncatedNumericTitle(cleanedName, title) {
   }
   return title
 }
+function makeGuessResolver(loaded) {
+  const current = new Map()
+  return {
+    resolve(str) {
+      if (current.has(str)) return current.get(str)
+      const g = loaded && loaded.has(str) ? loaded.get(str) : guessit(str)
+      current.set(str, g)
+      return g
+    },
+    current,
+  }
+}
+
+// Default resolver: no caching, straight through to guessit.
+const DIRECT_RESOLVER = { resolve: (str) => guessit(str), current: null }
 
 /** Yield one work item per video file in a torbox/webdl mylist entry. */
-function* parseWorkItems(source, entry) {
+function* parseWorkItems(source, entry, resolver = DIRECT_RESOLVER) {
   const itemId = entry.id
   const createdAt = Date.parse(entry.created_at) || 0
   let entryGuess // lazily parsed parent-torrent name, shared across a season pack's files
@@ -63,7 +78,7 @@ function* parseWorkItems(source, entry) {
     if (AMV_TAG_RE.test(name.trim())) continue
 
     const cleanedName = stripJunkPrefixes(name)
-    const guess = guessit(cleanedName)
+    const guess = resolver.resolve(cleanedName)
 
     let title = fixTruncatedNumericTitle(cleanedName, titleToString(guess.title))
     let year = guess.year || null
@@ -74,7 +89,7 @@ function* parseWorkItems(source, entry) {
     // Season-pack files sometimes have no show name at all (e.g. "01. Episode Title.mkv") —
     // the real title only lives on the parent torrent/webdl entry.
     if (isEpisode && !title && entry.name) {
-      if (entryGuess === undefined) entryGuess = guessit(stripJunkPrefixes(entry.name))
+      if (entryGuess === undefined) entryGuess = resolver.resolve(stripJunkPrefixes(entry.name))
       title = fixTruncatedNumericTitle(entry.name, titleToString(entryGuess.title))
       year = year || entryGuess.year || null
       season = season || entryGuess.season || 1
@@ -100,4 +115,4 @@ function* parseWorkItems(source, entry) {
   }
 }
 
-module.exports = { slugify, parseWorkItems }
+module.exports = { slugify, parseWorkItems, makeGuessResolver }
