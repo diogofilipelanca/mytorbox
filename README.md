@@ -11,7 +11,7 @@ A [Stremio](https://www.stremio.com/) addon that turns your [TorBox](https://tor
 
 ## Quick Setup
 
-Don't want to self-host? Use the hosted instance: **[mytorbox.vercel.app/configure](https://mytorbox.vercel.app/configure)** — enter your keys and generate an install link, no setup required.
+Don't want to self-host? Use the hosted instance: **[mytorbox.hackerslash.dev/configure](https://mytorbox.hackerslash.dev/configure)** — enter your keys and generate an install link, no setup required.
 
 ## Development Setup
 
@@ -31,7 +31,7 @@ Then open `http://localhost:7000/configure`.
 | `TMDB_API_KEY`   | no       | Default TMDB key, same idea.                                                                                                                                                             |
 | `RPDB_API_KEY`   | no       | Default RatingPosterDB key, same idea.                                                                                                                                                   |
 | `PORT`           | no       | Port to listen on. Defaults to`7000`.                                                                                                                                                  |
-| `BASE_URL`       | no       | Public base URL used to build the manifest's logo URL. Falls back to Vercel's own URL when deployed there.                                                                               |
+| `BASE_URL`       | no       | Public base URL used to build the manifest's logo URL (e.g.`https://your-domain`). If unset, relative URLs are used.                                                                     |
 | `REDIS_URL`      | no       | Redis connection string. Powers the library cache and is**required** for Custom Streams — without it, custom streams silently no-op and the library is cached in-process instead. |
 
 If none of `TORBOX_API_KEY`/`TMDB_API_KEY` are set, every install must go through `/configure` with its own keys (`behaviorHints.configurationRequired` is set accordingly in the manifest).
@@ -44,7 +44,9 @@ If none of `TORBOX_API_KEY`/`TMDB_API_KEY` are set, every install must go throug
 
 ## Deploying
 
-Configured for [Vercel](https://vercel.com) out of the box (`vercel.json` rewrites everything to `api/index.js`). Set the environment variables above in the Vercel project settings, and add a Redis instance (e.g. Upstash) if you want Custom Streams and cross-request library caching.
+Runs as a plain Node server (`npm start` → `index.js`), so it deploys to any container/VM host. Set the environment variables above, and add a Redis instance (e.g. Upstash) if you want Custom Streams and cross-request library caching.
+
+Deployed on [IBM Code Engine](https://www.ibm.com/products/code-engine): every push to `main` triggers a rebuild via the `.github/workflows/deploy-ibm.yml` workflow (buildpacks, no Dockerfile needed).
 
 ## Security
 

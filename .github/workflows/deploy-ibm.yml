@@ -1,7 +1,6 @@
 name: Deploy to IBM Code Engine
 
 # Rebuilds the Code Engine app from the latest main on every push.
-# Vercel deploys independently from its own GitHub integration — this does not touch it.
 on:
   push:
     branches: [main]

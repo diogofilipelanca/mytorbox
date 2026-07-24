@@ -40,7 +40,7 @@ function decodeConfigParam(raw) {
 }
 
 const app = express()
-app.set('trust proxy', true) // needed for correct req.ip behind Vercel/reverse proxies, used by rate limiting
+app.set('trust proxy', true) // needed for correct req.ip behind a reverse proxy/load balancer, used by rate limiting
 app.use(cors())
 app.use(express.json())
 
