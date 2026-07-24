@@ -13,14 +13,14 @@ const TMDB_BASE = 'https://api.themoviedb.org/3'
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500'
 const RPDB_BASE = 'https://api.ratingposterdb.com'
 
-const LIBRARY_CHECK_INTERVAL_MS = 30 * 60 * 1000
+const LIBRARY_CHECK_INTERVAL_MS = 15 * 60 * 1000
 // Hard expiry for a cached library — evicts inactive users; refreshed on every check.
 const LIBRARY_HARD_TTL_MS = 24 * 60 * 60 * 1000
 // guessit(filename) is deterministic and filenames are immutable, so parse results
 // can be cached for a long time (namespace bumped if the parser logic changes).
 const PARSE_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60
 // TMDB search/image lookups are stable public data — cache across rebuilds and users.
-const TMDB_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
+const TMDB_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60
 // TorBox /mylist paginates at 1000 items per page by default.
 const TORBOX_PAGE_LIMIT = 1000
 // Safety cap on pagination so a misbehaving API (e.g. one that ignores offset) can't
