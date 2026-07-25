@@ -1,4 +1,5 @@
 const redis = require('./redisClient')
+const stats = require('./stats')
 
 // Used only when Redis isn't configured (local dev). Not viable across serverless instances,
 // but keeps the limiter functional for a single long-running process.
@@ -26,6 +27,7 @@ function rateLimit(prefix, { windowSeconds, limit }) {
     try {
       const allowed = await withinLimit(`rl:${prefix}:${ip}`, windowSeconds, limit)
       if (!allowed) {
+        stats.track(`ratelimit:blocked:${prefix}`)
         res.status(429).json({ ok: false, error: 'Too many requests, try again later' })
         return
       }

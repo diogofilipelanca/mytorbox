@@ -5,6 +5,7 @@ const { parseWorkItems, slugify, makeGuessResolver } = require('./parser')
 const tmdb = require('./tmdb')
 const rpdb = require('./rpdb')
 const redis = require('./redisClient')
+const stats = require('./stats')
 const {
   LIBRARY_CHECK_INTERVAL_MS,
   LIBRARY_HARD_TTL_MS,
@@ -108,6 +109,8 @@ async function fetchEntriesBySource(torboxKey, bypassCache = false) {
   const bySource = {}
   for (const source of SOURCES) {
     bySource[source] = await fetchMylist(source, torboxKey, { bypassCache })
+    stats.track(`torbox:mylist:${source}`)
+    stats.track('torbox:items', bySource[source].length)
   }
   return bySource
 }
@@ -304,6 +307,7 @@ async function setCachedRecord(cacheKey, record) {
       const [tooBig, packed] = packWithLimit(record)
       if (tooBig) {
         console.warn('library: skipping cache write, library too large even compressed')
+        stats.track('lib:too_big')
         return
       }
       await redis.set(redisKeyFor(cacheKey), packed, 'EX', LIBRARY_HARD_TTL_SECONDS)
@@ -352,6 +356,7 @@ async function getLibrary(torboxKey, tmdbKey, rpdbKey = null, force = false) {
 
   const cached = await getCachedRecord(cacheKey)
   if (!force && cached && cached.lib && Date.now() - cached.validatedAt < LIBRARY_CHECK_INTERVAL_MS) {
+    stats.track('lib:hit')
     return cached.lib
   }
 
@@ -361,18 +366,25 @@ async function getLibrary(torboxKey, tmdbKey, rpdbKey = null, force = false) {
   const run = prevLock.then(async () => {
     const fresh = await getCachedRecord(cacheKey)
     if (!force && fresh && fresh.lib && Date.now() - fresh.validatedAt < LIBRARY_CHECK_INTERVAL_MS) {
+      stats.track('lib:hit_coalesced')
       return fresh.lib
     }
+    stats.track(force ? 'lib:force' : 'lib:revalidate')
 
     const entriesBySource = await fetchEntriesBySource(torboxKey, force)
     const fingerprint = fingerprintEntries(entriesBySource)
 
     if (!force && fresh && fresh.lib && fresh.fingerprint === fingerprint) {
-      
+      stats.track('lib:unchanged')
       await setCachedRecord(cacheKey, { lib: fresh.lib, fingerprint, validatedAt: Date.now() })
       return fresh.lib
     }
+    const startedAt = Date.now()
     const lib = await buildLibrary(torboxKey, tmdbKey, rpdbKey, entriesBySource, cacheKey)
+    const buildMs = Date.now() - startedAt
+    stats.track('lib:rebuild')
+    stats.trackDuration('lib:build', buildMs)
+    stats.trackLibraryShape(cacheKey, lib, buildMs)
     await setCachedRecord(cacheKey, { lib, fingerprint, validatedAt: Date.now() })
     return lib
   })

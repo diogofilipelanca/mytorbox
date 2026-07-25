@@ -1,5 +1,6 @@
 const path = require('path')
 const fs = require('fs')
+const crypto = require('crypto')
 const express = require('express')
 const cors = require('cors')
 const addon = require('./addon')
@@ -8,12 +9,14 @@ const library = require('./library')
 const tmdb = require('./tmdb')
 const customStreams = require('./customStreams')
 const config = require('./config')
+const stats = require('./stats')
 const { rateLimit } = require('./rateLimit')
 const { CUSTOM_STREAM_MIN_TTL_MS, CUSTOM_STREAM_MAX_TTL_MS, CUSTOM_STREAM_DEFAULT_TTL_MS, RATE_LIMITS } = config
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public')
 const LOGO_PATH = path.join(PUBLIC_DIR, 'logo.png')
 const CONFIGURE_HTML = fs.readFileSync(path.join(PUBLIC_DIR, 'configure.html'), 'utf8')
+const STATS_HTML = fs.readFileSync(path.join(PUBLIC_DIR, 'stats.html'), 'utf8')
 
 function logoVersion() {
   return Math.floor(fs.statSync(LOGO_PATH).mtimeMs / 1000)
@@ -39,20 +42,69 @@ function decodeConfigParam(raw) {
   }
 }
 
+function secretMatches(provided) {
+  if (!config.ADMIN_SECRET || typeof provided !== 'string') return false
+  const a = Buffer.from(provided)
+  const b = Buffer.from(config.ADMIN_SECRET)
+  if (a.length !== b.length) return false
+  return crypto.timingSafeEqual(a, b)
+}
+
+function providedSecret(req) {
+  const header = req.get('x-admin-secret')
+  if (header) return header
+  const auth = req.get('authorization') || ''
+  return auth.startsWith('Bearer ') ? auth.slice(7) : null
+}
+
+function requireAdmin(req, res, next) {
+  if (!config.ADMIN_SECRET) {
+    res.status(503).json({ ok: false, error: 'ADMIN_SECRET is not configured on this server' })
+    return
+  }
+  if (!secretMatches(providedSecret(req))) {
+    stats.track('admin:auth_failed')
+    res.status(401).json({ ok: false, error: 'unauthorized' })
+    return
+  }
+  next()
+}
+
 const app = express()
 app.set('trust proxy', true) // needed for correct req.ip behind a reverse proxy/load balancer, used by rate limiting
 app.use(cors())
 app.use(express.json())
 
+const UNTRACKED_PATHS = /^\/(logo\.png|stats|api\/stats)$/
+
+app.use((req, res, next) => {
+  if (UNTRACKED_PATHS.test(req.path)) {
+    next()
+    return
+  }
+  const startedAt = Date.now()
+  res.on('finish', () => {
+    const kind = req.statsKind || 'other'
+    stats.trackHourly('req')
+    stats.track(`req:${kind}`)
+    stats.track(`status:${Math.floor(res.statusCode / 100)}xx`)
+    stats.trackDuration(`req:${kind}`, Date.now() - startedAt)
+  })
+  next()
+})
+
 app.get('/', (req, res) => {
+  req.statsKind = 'configure'
   res.type('html').send(configurePage())
 })
 
 app.get('/configure', (req, res) => {
+  req.statsKind = 'configure'
   res.type('html').send(configurePage())
 })
 
 app.get('/:config/configure', (req, res) => {
+  req.statsKind = 'configure'
   const cfg = decodeConfigParam(req.params.config)
   if (!cfg) {
     res.type('html').send(configurePage())
@@ -62,23 +114,49 @@ app.get('/:config/configure', (req, res) => {
 })
 
 app.post('/api/validate', rateLimit('validate', RATE_LIMITS.validate), async (req, res) => {
+  req.statsKind = 'validate'
   const { torbox_key: torboxKey, tmdb_key: tmdbKey, rpdb_key: rpdbKey } = req.body || {}
   const [torbox, tmdb, rpdb] = await Promise.all([
     validators.checkTorbox(torboxKey),
     validators.checkTmdb(tmdbKey),
     validators.checkRpdb(rpdbKey),
   ])
+  stats.track(`validate:torbox:${torbox.valid ? 'ok' : 'fail'}`)
+  stats.track(`validate:tmdb:${tmdb.valid ? 'ok' : 'fail'}`)
+  if (rpdb) stats.track(`validate:rpdb:${rpdb.valid ? 'ok' : 'fail'}`)
+  if (torbox.valid && tmdb.valid) stats.trackUser({ torboxKey, tmdbKey, rpdbKey: rpdbKey || null })
   res.json({ torbox, tmdb, rpdb })
 })
 
-app.post('/api/cache/clear', rateLimit('cacheClear', RATE_LIMITS.cacheClear), async (req, res) => {
-  if (!config.ADMIN_SECRET || req.get('x-admin-secret') !== config.ADMIN_SECRET) {
-    res.status(401).json({ ok: false, error: 'unauthorized' })
-    return
-  }
+app.post('/api/cache/clear', rateLimit('cacheClear', RATE_LIMITS.cacheClear), requireAdmin, async (req, res) => {
+  req.statsKind = 'admin'
   await library.clearCache()
   tmdb.clearCache()
+  stats.track('admin:cache_cleared')
   res.json({ cleared: true })
+})
+
+app.get('/stats', (req, res) => {
+  if (!config.ADMIN_SECRET) {
+    res.status(503).type('html').send(
+      '<!doctype html><meta charset="utf-8"><title>Stats unavailable</title>' +
+      '<body style="font:15px system-ui;background:#12101a;color:#e8e4f0;padding:3rem">' +
+      '<h1 style="font-size:1.25rem">Stats dashboard is disabled</h1>' +
+      '<p>Set <code>ADMIN_SECRET</code> in the environment and restart to enable <code>/stats</code>.</p>'
+    )
+    return
+  }
+  res.type('html').send(STATS_HTML.replace(/__LOGO_VERSION__/g, String(logoVersion())))
+})
+
+app.get('/api/stats', rateLimit('stats', RATE_LIMITS.stats), requireAdmin, async (req, res) => {
+  try {
+    const payload = await stats.summary({ fresh: req.query.fresh === '1' })
+    res.json({ ok: true, stats: payload })
+  } catch (err) {
+    console.error('stats handler error:', err)
+    res.status(500).json({ ok: false, error: 'Could not compute stats' })
+  }
 })
 
 function toPublicEntry(e) {
@@ -104,16 +182,19 @@ async function enrichEntry(e, tmdbKey, rpdbKey) {
 }
 
 app.post('/api/custom-streams/list', rateLimit('customStreamRead', RATE_LIMITS.customStreamRead), async (req, res) => {
+  req.statsKind = 'custom:list'
   const { torbox_key: torboxKey, tmdb_key: tmdbKey, rpdb_key: rpdbKey } = req.body || {}
   if (!torboxKey || !tmdbKey) {
     return res.status(400).json({ ok: false, error: 'torbox_key and tmdb_key are required' })
   }
+  stats.trackUser({ torboxKey, tmdbKey, rpdbKey: rpdbKey || null })
   const entries = await customStreams.listCustomStreams(torboxKey, tmdbKey, rpdbKey || null)
   const enriched = await Promise.all(entries.map((e) => enrichEntry(e, tmdbKey, rpdbKey || null)))
   res.json({ ok: true, entries: enriched })
 })
 
 app.post('/api/custom-streams/add', rateLimit('customStreamWrite', RATE_LIMITS.customStreamWrite), async (req, res) => {
+  req.statsKind = 'custom:add'
   const {
     torbox_key: torboxKey, tmdb_key: tmdbKey, rpdb_key: rpdbKey,
     type, imdb_id: imdbId, season, episode, stream_url: streamUrl, title, ttl_seconds: ttlSeconds,
@@ -170,6 +251,7 @@ app.post('/api/custom-streams/add', rateLimit('customStreamWrite', RATE_LIMITS.c
 })
 
 app.post('/api/custom-streams/remove', rateLimit('customStreamRead', RATE_LIMITS.customStreamRead), async (req, res) => {
+  req.statsKind = 'custom:remove'
   const { torbox_key: torboxKey, tmdb_key: tmdbKey, rpdb_key: rpdbKey, id } = req.body || {}
   if (!torboxKey || !tmdbKey || !id) {
     return res.status(400).json({ ok: false, error: 'torbox_key, tmdb_key, and id are required' })
@@ -213,12 +295,32 @@ function defaultAccessAllowed(req, cfg) {
   return req.query.token === config.ADDON_ACCESS_TOKEN
 }
 
+function trackConfiguredUser(cfg) {
+  const keys = addon.resolveKeys(cfg)
+  if (keys) stats.trackUser(keys)
+}
+
+// Folded to a known set before reaching a stats key name, so a varied URL can't mint
+// unbounded month-lived Redis keys.
+const KNOWN_CATALOG_IDS = new Set(addon.manifest.catalogs.map((c) => c.id))
+
+function knownCatalogId(id) {
+  return KNOWN_CATALOG_IDS.has(id) ? id : 'unknown'
+}
+
+function knownType(type) {
+  return type === 'movie' || type === 'series' ? type : 'other'
+}
+
 function manifestHandler(req, res) {
+  req.statsKind = 'manifest'
   const cfg = req.params.config ? decodeConfigParam(req.params.config) : null
   if (!defaultAccessAllowed(req, cfg)) {
     res.status(401).json({ err: 'unauthorized' })
     return
   }
+  trackConfiguredUser(cfg)
+  stats.track(cfg ? 'manifest:configured' : 'manifest:default')
   res.type('application/json').send(JSON.stringify(addon.manifestFor(cfg)))
 }
 
@@ -226,11 +328,13 @@ app.get('/manifest.json', manifestHandler)
 app.get('/:config/manifest.json', manifestHandler)
 
 async function catalogHandler(req, res) {
+  req.statsKind = 'catalog'
   const cfg = req.params.config ? decodeConfigParam(req.params.config) : null
   if (!defaultAccessAllowed(req, cfg)) {
     res.status(401).json({ err: 'unauthorized' })
     return
   }
+  trackConfiguredUser(cfg)
   const type = req.params.type
   let id, extra
   if (req.params.extraWithExt !== undefined) {
@@ -242,51 +346,66 @@ async function catalogHandler(req, res) {
   }
   try {
     const result = await addon.getCatalog({ type, id, config: cfg, extra })
+    stats.track(`catalog:${knownCatalogId(id)}`)
+    if (!result.metas.length) stats.track('catalog:empty')
     res.type('application/json').send(JSON.stringify(result))
   } catch (err) {
     console.error('catalog handler error:', err)
+    stats.track('error:catalog')
     res.status(500).json({ err: 'handler error' })
   }
 }
 
 async function metaHandler(req, res) {
+  req.statsKind = 'meta'
   const cfg = req.params.config ? decodeConfigParam(req.params.config) : null
   if (!defaultAccessAllowed(req, cfg)) {
     res.status(401).json({ err: 'unauthorized' })
     return
   }
+  trackConfiguredUser(cfg)
   const type = req.params.type
   const id = stripJsonExt(req.params.idWithExt)
   try {
     const result = await addon.getMeta({ type, id, config: cfg })
     if (!result) {
+      stats.track('meta:not_found')
       res.status(404).json({ err: 'not found' })
       return
     }
+    stats.track(`meta:${knownType(type)}`)
     res.type('application/json').send(JSON.stringify(result))
   } catch (err) {
     console.error('meta handler error:', err)
+    stats.track('error:meta')
     res.status(500).json({ err: 'handler error' })
   }
 }
 
 async function streamHandler(req, res) {
+  req.statsKind = 'stream'
   const cfg = req.params.config ? decodeConfigParam(req.params.config) : null
   if (!defaultAccessAllowed(req, cfg)) {
     res.status(401).json({ err: 'unauthorized' })
     return
   }
+  trackConfiguredUser(cfg)
   const type = req.params.type
   const id = stripJsonExt(req.params.idWithExt)
   try {
     const result = await addon.getStream({ type, id, config: cfg })
     if (!result) {
+      stats.track('stream:not_found')
       res.status(404).json({ err: 'not found' })
       return
     }
+    stats.track(`stream:${knownType(type)}`)
+    stats.track('stream:offered', (result.streams || []).length)
+    if (id.startsWith('tb:custom:')) stats.track('stream:custom')
     res.type('application/json').send(JSON.stringify(result))
   } catch (err) {
     console.error('stream handler error:', err)
+    stats.track('error:stream')
     res.status(500).json({ err: 'handler error' })
   }
 }

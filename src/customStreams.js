@@ -1,5 +1,6 @@
 const crypto = require('crypto')
 const redis = require('./redisClient')
+const stats = require('./stats')
 const { slugify } = require('./parser')
 const validators = require('./validators')
 const {
@@ -64,12 +65,18 @@ async function addCustomStream(torboxKey, tmdbKey, rpdbKey, entry) {
   const idx = idxKey(uKey)
 
   try {
-    if (!(await isVerifiedUser(uKey, torboxKey, tmdbKey))) return null
+    if (!(await isVerifiedUser(uKey, torboxKey, tmdbKey))) {
+      stats.track('custom:rejected:unverified')
+      return null
+    }
 
     const now = Date.now()
     await redis.zremrangebyscore(idx, 0, now)
     const count = await redis.zcard(idx)
-    if (count >= MAX_CUSTOM_STREAMS_PER_KEY) return null
+    if (count >= MAX_CUSTOM_STREAMS_PER_KEY) {
+      stats.track('custom:rejected:limit')
+      return null
+    }
 
     const ttlMs = clampTtlMs(entry.ttlMs)
     const ttlSeconds = Math.floor(ttlMs / 1000)
@@ -92,6 +99,10 @@ async function addCustomStream(torboxKey, tmdbKey, rpdbKey, entry) {
     await redis.set(entryKey(uKey, id), JSON.stringify(stored), 'EX', ttlSeconds)
     await redis.zadd(idx, expiresAt, id)
     await redis.expire(idx, ttlSeconds + 60)
+
+    stats.track('custom:added')
+    stats.track(`custom:added:${entry.type}`)
+    if (!entry.imdbId) stats.track('custom:added:no_imdb')
 
     return stored
   } catch (err) {
@@ -143,6 +154,7 @@ async function removeCustomStream(torboxKey, tmdbKey, rpdbKey, entryId) {
   try {
     const deleted = await redis.del(entryKey(uKey, entryId))
     await redis.zrem(idx, entryId)
+    if (deleted > 0) stats.track('custom:removed')
     return deleted > 0
   } catch (err) {
     console.warn('customStreams: removeCustomStream failed:', err.message)

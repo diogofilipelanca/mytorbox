@@ -1,0 +1,1032 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MyTorbox — Stats</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" type="image/png" href="/logo.png?v=__LOGO_VERSION__">
+<link rel="apple-touch-icon" href="/logo.png?v=__LOGO_VERSION__">
+<link rel="preconnect" href="https://api.fontshare.com" crossorigin>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://api.fontshare.com/v2/css?f[]=switzer@400,500,600,700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Martian+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --hue: 292;
+
+    --bg-0: oklch(9% 0.014 var(--hue));
+    --bg-1: oklch(12.5% 0.017 var(--hue));
+    --bg-2: oklch(16% 0.02 var(--hue));
+    --bg-raised: oklch(19.5% 0.024 var(--hue));
+
+    --border: oklch(38% 0.03 var(--hue) / 0.4);
+    --border-strong: oklch(50% 0.045 var(--hue) / 0.65);
+
+    --text-0: oklch(95% 0.008 var(--hue));
+    --text-1: oklch(74% 0.02 var(--hue));
+    --text-2: oklch(53% 0.018 var(--hue));
+
+    --violet: oklch(66% 0.19 var(--hue));
+    --violet-strong: oklch(56% 0.205 var(--hue));
+    --violet-soft: oklch(80% 0.085 var(--hue));
+    --violet-wash: oklch(24% 0.04 var(--hue) / 0.5);
+
+    --blue: oklch(65% 0.17 258);
+    --blue-soft: oklch(80% 0.09 258);
+    --blue-border: oklch(52% 0.14 258 / 0.55);
+
+    --amber: oklch(74% 0.15 75);
+    --amber-soft: oklch(82% 0.11 78);
+    --amber-wash: oklch(26% 0.06 75 / 0.55);
+    --amber-border: oklch(58% 0.14 72 / 0.55);
+
+    --success: oklch(76% 0.16 152);
+    --success-border: oklch(50% 0.13 152 / 0.5);
+    --danger: oklch(69% 0.19 24);
+
+    --font-sans: 'Switzer', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: 'Martian Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+    --fs-xs: 0.6875rem;
+    --fs-sm: 0.8125rem;
+    --fs-base: 0.9375rem;
+    --fs-lg: 1.25rem;
+    --fs-xl: 2rem;
+
+    --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+    --sp-5: 24px; --sp-6: 32px; --sp-7: 48px; --sp-8: 64px; --sp-9: 96px;
+
+    --radius-sm: 3px;
+    --radius-md: 6px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: var(--font-sans);
+    font-size: var(--fs-base);
+    color: var(--text-0);
+    background:
+      repeating-linear-gradient(0deg, oklch(20% 0.02 var(--hue) / 0.35) 0 1px, transparent 1px 48px),
+      repeating-linear-gradient(90deg, oklch(20% 0.02 var(--hue) / 0.35) 0 1px, transparent 1px 48px),
+      radial-gradient(120% 90% at 50% 0%, oklch(14% 0.02 var(--hue)) 0%, var(--bg-0) 65%);
+    line-height: 1.5;
+  }
+
+  .page {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: clamp(var(--sp-5), 4vw, var(--sp-7)) clamp(var(--sp-4), 4vw, var(--sp-6)) var(--sp-9);
+  }
+
+  .gate-wrap {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: var(--sp-5);
+  }
+
+  .gate {
+    width: 100%;
+    max-width: 380px;
+    position: relative;
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: var(--sp-6);
+  }
+
+  .gate-brand { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-5); }
+  .gate-brand img { width: 40px; height: 40px; filter: drop-shadow(0 3px 10px oklch(56% 0.2 var(--hue) / 0.45)); }
+  .gate-brand h1 { margin: 0; font-size: var(--fs-lg); font-weight: 700; letter-spacing: -0.02em; }
+  .kicker {
+    margin: var(--sp-1) 0 0;
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--violet-soft);
+  }
+
+  .corner { position: absolute; width: 11px; height: 11px; pointer-events: none; }
+  .corner.tl { top: -1px; left: -1px; border-top: 1.5px solid var(--violet); border-left: 1.5px solid var(--violet); border-top-left-radius: 2px; }
+  .corner.tr { top: -1px; right: -1px; border-top: 1.5px solid var(--violet); border-right: 1.5px solid var(--violet); border-top-right-radius: 2px; }
+  .corner.bl { bottom: -1px; left: -1px; border-bottom: 1.5px solid var(--violet); border-left: 1.5px solid var(--violet); border-bottom-left-radius: 2px; }
+  .corner.br { bottom: -1px; right: -1px; border-bottom: 1.5px solid var(--violet); border-right: 1.5px solid var(--violet); border-bottom-right-radius: 2px; }
+
+  label.field-label {
+    display: block;
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    margin-bottom: var(--sp-2);
+  }
+
+  .input-wrap { position: relative; display: flex; align-items: center; }
+  .input-wrap svg.icon-key {
+    position: absolute; left: 13px; width: 15px; height: 15px;
+    color: var(--text-2); pointer-events: none;
+  }
+
+  input[type="password"], input[type="text"] {
+    width: 100%;
+    padding: 11px 12px 11px 38px;
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-2);
+    color: var(--text-0);
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  input::placeholder { color: var(--text-2); font-family: var(--font-mono); }
+  input:focus {
+    outline: none;
+    border-color: var(--violet);
+    box-shadow: 0 0 0 3px oklch(66% 0.19 var(--hue) / 0.22);
+  }
+  input.invalid { border-color: oklch(69% 0.19 24 / 0.6); }
+
+  .check {
+    display: flex; align-items: center; gap: var(--sp-2);
+    margin-top: var(--sp-3);
+    font-size: var(--fs-xs);
+    color: var(--text-2);
+  }
+  .check input { width: auto; accent-color: var(--violet); }
+
+  button.primary {
+    width: 100%;
+    margin-top: var(--sp-4);
+    padding: 12px;
+    display: flex; align-items: center; justify-content: center; gap: var(--sp-2);
+    font-family: var(--font-sans);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--violet-strong);
+    color: oklch(98% 0.01 var(--hue));
+    cursor: pointer;
+    background: var(--violet-strong);
+    box-shadow: inset 0 1px 0 oklch(100% 0 0 / 0.16);
+    transition: background 0.12s, transform 0.12s;
+  }
+  button.primary:hover { background: var(--violet); transform: translateY(-1px); }
+  button.primary:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+
+  .gate-error, .gate-hint {
+    margin: var(--sp-3) 0 0;
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    line-height: 1.5;
+  }
+  .gate-error { color: var(--danger); display: none; }
+  .gate-hint { color: var(--text-2); }
+
+  .top {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+    flex-wrap: wrap;
+    margin-bottom: var(--sp-5);
+  }
+  .top-brand { display: flex; align-items: center; gap: var(--sp-3); margin-right: auto; }
+  .top-brand img { width: 38px; height: 38px; filter: drop-shadow(0 3px 10px oklch(56% 0.2 var(--hue) / 0.45)); }
+  .top-brand h1 { margin: 0; font-size: var(--fs-lg); font-weight: 700; letter-spacing: -0.02em; }
+
+  .controls { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+
+  button.btn {
+    display: flex; align-items: center; gap: var(--sp-2);
+    padding: 8px 13px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    color: var(--text-0);
+    font-family: var(--font-sans);
+    font-size: var(--fs-sm);
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+  }
+  button.btn:hover { background: var(--bg-raised); border-color: var(--violet); }
+  button.btn svg { width: 14px; height: 14px; }
+  button.btn.on { color: var(--violet-soft); border-color: oklch(56% 0.2 var(--hue) / 0.55); background: var(--violet-wash); }
+
+  .meta-line {
+    display: flex; align-items: center; gap: var(--sp-3);
+    flex-wrap: wrap;
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-2);
+    margin-bottom: var(--sp-5);
+  }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 3px oklch(76% 0.16 152 / 0.2); }
+  .dot.stale { background: var(--amber); box-shadow: 0 0 0 3px oklch(74% 0.15 75 / 0.2); }
+  .meta-line .live { display: flex; align-items: center; gap: var(--sp-2); color: var(--success); }
+
+  .grid { display: grid; gap: var(--sp-3); }
+  .tiles { grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); margin-bottom: var(--sp-3); }
+  .cols-2 { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+
+  .card {
+    position: relative;
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: var(--sp-4) var(--sp-5) var(--sp-5);
+  }
+
+  .card-head {
+    display: flex; align-items: baseline; gap: var(--sp-3);
+    margin-bottom: var(--sp-4);
+  }
+  .card-head h2 {
+    margin: 0;
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-0);
+  }
+  .card-head .note {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    color: var(--text-2);
+  }
+
+  .tag {
+    flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 22px; height: 18px; padding: 0 5px;
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    color: var(--text-2);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+  }
+  .tag.c-violet { color: var(--violet-soft); border-color: oklch(56% 0.2 var(--hue) / 0.5); }
+  .tag.c-blue { color: var(--blue-soft); border-color: var(--blue-border); }
+  .tag.c-green { color: var(--success); border-color: var(--success-border); }
+  .tag.c-amber { color: var(--amber-soft); border-color: var(--amber-border); }
+
+  .tile {
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: var(--sp-4);
+    display: flex; flex-direction: column; gap: var(--sp-1);
+  }
+  .tile .k {
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-2);
+  }
+  .tile .v {
+    font-size: var(--fs-xl);
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
+  .tile .s { font-size: var(--fs-xs); color: var(--text-1); font-family: var(--font-mono); }
+  .tile.accent { border-color: oklch(56% 0.2 var(--hue) / 0.45); background: linear-gradient(160deg, var(--violet-wash), var(--bg-1) 65%); }
+  .tile.accent .v { color: var(--violet-soft); }
+
+  .chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 120px;
+  }
+  .chart .bar {
+    flex: 1;
+    min-width: 3px;
+    min-height: 2px;
+    border-radius: 1.5px 1.5px 0 0;
+    background: linear-gradient(180deg, var(--violet) 0%, var(--violet-strong) 100%);
+    opacity: 0.85;
+    transition: opacity 0.12s, filter 0.12s;
+  }
+  .chart .bar:hover { opacity: 1; filter: brightness(1.25); }
+  .chart .bar.zero { background: var(--bg-raised); }
+  .chart.blue .bar { background: linear-gradient(180deg, var(--blue) 0%, oklch(52% 0.15 258) 100%); }
+  .chart.green .bar { background: linear-gradient(180deg, var(--success) 0%, oklch(58% 0.14 152) 100%); }
+
+  .axis {
+    display: flex; justify-content: space-between;
+    margin-top: var(--sp-2);
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    color: var(--text-2);
+  }
+
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+  th, td { text-align: right; padding: 7px var(--sp-3) 7px 0; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; padding-left: 0; }
+  th {
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-2);
+    border-bottom: 1px solid var(--border);
+  }
+  td { border-bottom: 1px solid oklch(38% 0.03 var(--hue) / 0.18); color: var(--text-1); font-variant-numeric: tabular-nums; }
+  td.name { color: var(--text-0); font-family: var(--font-mono); font-size: var(--fs-xs); }
+  td.strong { color: var(--text-0); font-weight: 600; }
+  tbody tr:hover td { background: oklch(19.5% 0.024 var(--hue) / 0.5); }
+  tbody tr:last-child td { border-bottom: none; }
+
+  .kv { display: flex; flex-direction: column; gap: 0; }
+  .kv-row {
+    display: flex; align-items: baseline; gap: var(--sp-3);
+    padding: 7px 0;
+    border-bottom: 1px solid oklch(38% 0.03 var(--hue) / 0.18);
+    font-size: var(--fs-sm);
+  }
+  .kv-row:last-child { border-bottom: none; }
+  .kv-row .k { color: var(--text-2); font-family: var(--font-mono); font-size: var(--fs-xs); letter-spacing: 0.03em; text-transform: uppercase; }
+  .kv-row .v { margin-left: auto; color: var(--text-0); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .kv-row .v.muted { color: var(--text-2); font-weight: 400; }
+
+  .meter { margin-bottom: var(--sp-3); }
+  .meter:last-child { margin-bottom: 0; }
+  .meter-top {
+    display: flex; align-items: baseline; gap: var(--sp-2);
+    font-size: var(--fs-sm);
+    margin-bottom: 5px;
+  }
+  .meter-top .k { color: var(--text-1); }
+  .meter-top .v { margin-left: auto; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-0); font-variant-numeric: tabular-nums; }
+  .meter-bar { height: 6px; border-radius: 3px; background: var(--bg-raised); overflow: hidden; }
+  .meter-bar > i { display: block; height: 100%; border-radius: 3px; background: var(--violet); }
+  .meter-bar > i.blue { background: var(--blue); }
+  .meter-bar > i.green { background: var(--success); }
+  .meter-bar > i.amber { background: var(--amber); }
+
+  .filter-input {
+    padding: 7px 11px;
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-2);
+    color: var(--text-0);
+    width: 180px;
+    margin-left: auto;
+  }
+  .filter-input:focus { outline: none; border-color: var(--violet); box-shadow: none; }
+
+  .empty {
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    color: var(--text-2);
+    padding: var(--sp-3) 0;
+  }
+
+  .warning {
+    display: flex; gap: var(--sp-3);
+    margin-bottom: var(--sp-4);
+    padding: var(--sp-3) var(--sp-4);
+    border-radius: var(--radius-sm);
+    background: var(--amber-wash);
+    border: 1px solid var(--amber-border);
+    font-size: var(--fs-xs);
+    color: var(--text-1);
+    line-height: 1.55;
+  }
+  .warning svg { width: 15px; height: 15px; flex-shrink: 0; margin-top: 2px; color: var(--amber-soft); }
+
+  .foot {
+    margin-top: var(--sp-6);
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    color: var(--text-2);
+    line-height: 1.7;
+  }
+  .foot code { color: var(--text-1); }
+
+  .spinner {
+    width: 12px; height: 12px; border-radius: 50%;
+    border: 2px solid var(--border-strong);
+    border-top-color: var(--violet);
+    animation: spin 0.6s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<div class="gate-wrap" id="gate">
+  <form class="gate" id="gate-form" autocomplete="off">
+    <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+    <div class="gate-brand">
+      <img src="/logo.png?v=__LOGO_VERSION__" alt="">
+      <div>
+        <h1>MyTorbox</h1>
+        <p class="kicker">Stats · Restricted</p>
+      </div>
+    </div>
+    <label class="field-label" for="token">Admin token</label>
+    <div class="input-wrap">
+      <svg class="icon-key" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+      <input type="password" id="token" placeholder="ADMIN_SECRET" autocomplete="current-password" spellcheck="false" required>
+    </div>
+    <label class="check"><input type="checkbox" id="remember"> Remember on this device</label>
+    <button type="submit" class="primary" id="unlock">
+      <span>Unlock</span>
+    </button>
+    <p class="gate-error" id="gate-error"></p>
+    <p class="gate-hint">The dashboard reads aggregate counters from Redis. Nothing here is public — the token is the server's <code>ADMIN_SECRET</code>.</p>
+  </form>
+</div>
+
+<div class="page" id="dash" hidden>
+  <div class="top">
+    <div class="top-brand">
+      <img src="/logo.png?v=__LOGO_VERSION__" alt="">
+      <div>
+        <h1>Stats</h1>
+        <p class="kicker">Rolling 30-day window</p>
+      </div>
+    </div>
+    <div class="controls">
+      <button class="btn" id="btn-auto" title="Auto-refresh every 60s">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        <span>Auto</span>
+      </button>
+      <button class="btn" id="btn-refresh">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+        <span>Refresh</span>
+      </button>
+      <button class="btn" id="btn-lock" title="Forget token">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+        <span>Lock</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="meta-line" id="meta-line"></div>
+  <div id="banner"></div>
+  <div id="body"></div>
+
+  <p class="foot">
+    Counters live under the <code>st:*</code> Redis namespace, every key with a ~31-day TTL — the window prunes itself.
+    Users are identified only by a SHA-256 of their key triple; daily uniques use HyperLogLog, so counts are approximate (±0.8%).
+    Writes are buffered in-process and flushed on a timer (<code>STATS_FLUSH_SECONDS</code>), and this payload is cached for 60s (<code>Refresh</code> forces a recompute).
+  </p>
+</div>
+
+<script>
+(function () {
+  'use strict'
+
+  var STORE_KEY = 'mytorbox_admin_token'
+  var gate = document.getElementById('gate')
+  var gateForm = document.getElementById('gate-form')
+  var gateError = document.getElementById('gate-error')
+  var tokenInput = document.getElementById('token')
+  var rememberInput = document.getElementById('remember')
+  var unlockBtn = document.getElementById('unlock')
+  var dash = document.getElementById('dash')
+  var metaLine = document.getElementById('meta-line')
+  var banner = document.getElementById('banner')
+  var body = document.getElementById('body')
+  var refreshBtn = document.getElementById('btn-refresh')
+  var autoBtn = document.getElementById('btn-auto')
+  var lockBtn = document.getElementById('btn-lock')
+
+  var token = null
+  var autoTimer = null
+  var lastPayload = null
+  var counterFilter = ''
+
+  function n(v) {
+    if (v === null || v === undefined || v !== v) return '—'
+    return Number(v).toLocaleString('en-US')
+  }
+  function compact(v) {
+    if (v === null || v === undefined || v !== v) return '—'
+    var a = Math.abs(v)
+    if (a >= 1e9) return (v / 1e9).toFixed(a >= 1e10 ? 0 : 1) + 'B'
+    if (a >= 1e6) return (v / 1e6).toFixed(a >= 1e7 ? 0 : 1) + 'M'
+    if (a >= 1e4) return (v / 1e3).toFixed(a >= 1e5 ? 0 : 1) + 'k'
+    return Number(v).toLocaleString('en-US')
+  }
+  function ms(v) {
+    if (v === null || v === undefined) return '—'
+    if (v < 1000) return Math.round(v) + 'ms'
+    if (v < 60000) return (v / 1000).toFixed(v < 10000 ? 2 : 1) + 's'
+    return Math.floor(v / 60000) + 'm ' + Math.round((v % 60000) / 1000) + 's'
+  }
+  function pct(v) {
+    if (v === null || v === undefined || v !== v) return '—'
+    return (v * 100).toFixed(v > 0.995 || v === 0 ? 0 : 1) + '%'
+  }
+  function ago(t) {
+    if (!t) return '—'
+    var s = Math.max(0, Math.round((Date.now() - t) / 1000))
+    if (s < 60) return s + 's ago'
+    if (s < 3600) return Math.floor(s / 60) + 'm ago'
+    if (s < 86400) return Math.floor(s / 3600) + 'h ago'
+    return Math.floor(s / 86400) + 'd ago'
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    })
+  }
+  function label(event) {
+    return esc(event)
+  }
+  function dayLabel(d) { return d ? d.slice(5) : '' }
+  function hourLabel(h) { return h ? h.slice(11) + ':00' : '' }
+
+  function c(payload, event, window) {
+    var row = payload.counters && payload.counters[event]
+    if (!row) return 0
+    var v = row[window || 'd30']
+    return typeof v === 'number' ? v : 0
+  }
+  function daily(payload, event) {
+    var row = payload.counters && payload.counters[event]
+    return (row && row.daily) || (payload.days || []).map(function () { return 0 })
+  }
+  function ratio(a, b) {
+    var total = a + b
+    return total > 0 ? a / total : null
+  }
+
+  function tile(k, v, sub, accent) {
+    return '<div class="tile' + (accent ? ' accent' : '') + '">' +
+      '<span class="k">' + esc(k) + '</span>' +
+      '<span class="v">' + v + '</span>' +
+      '<span class="s">' + (sub || '&nbsp;') + '</span></div>'
+  }
+
+  function card(tag, tagClass, title, note, inner) {
+    return '<div class="card"><div class="card-head">' +
+      '<span class="tag ' + tagClass + '">' + tag + '</span>' +
+      '<h2>' + esc(title) + '</h2>' +
+      (note ? '<span class="note">' + note + '</span>' : '') +
+      '</div>' + inner + '</div>'
+  }
+
+  function chart(values, labels, cls, fmt) {
+    if (!values.length) return '<p class="empty">No data yet.</p>'
+    var max = Math.max.apply(null, values.concat([1]))
+    var bars = values.map(function (v, i) {
+      var h = v > 0 ? Math.max(3, Math.round((v / max) * 100)) : 0
+      return '<i class="bar' + (v > 0 ? '' : ' zero') + '" style="height:' + h + '%" ' +
+        'title="' + esc(labels[i]) + ' · ' + (fmt ? fmt(v) : n(v)) + '"></i>'
+    }).join('')
+    return '<div class="chart ' + (cls || '') + '">' + bars + '</div>' +
+      '<div class="axis"><span>' + esc(labels[0]) + '</span>' +
+      '<span>peak ' + (fmt ? fmt(max) : n(max)) + '</span>' +
+      '<span>' + esc(labels[labels.length - 1]) + '</span></div>'
+  }
+
+  function kv(rows) {
+    if (!rows.length) return '<p class="empty">Nothing recorded yet.</p>'
+    return '<div class="kv">' + rows.map(function (r) {
+      return '<div class="kv-row"><span class="k">' + esc(r[0]) + '</span>' +
+        '<span class="v' + (r[2] ? ' muted' : '') + '">' + r[1] + '</span></div>'
+    }).join('') + '</div>'
+  }
+
+  function meter(k, value, total, cls, display) {
+    var frac = total > 0 ? Math.min(1, value / total) : 0
+    return '<div class="meter"><div class="meter-top"><span class="k">' + esc(k) + '</span>' +
+      '<span class="v">' + (display || n(value)) + '</span></div>' +
+      '<div class="meter-bar"><i class="' + (cls || '') + '" style="width:' + (frac * 100).toFixed(1) + '%"></i></div></div>'
+  }
+
+  function table(headers, rows, emptyMsg) {
+    if (!rows.length) return '<p class="empty">' + esc(emptyMsg || 'Nothing recorded yet.') + '</p>'
+    return '<div class="table-wrap"><table><thead><tr>' +
+      headers.map(function (h) { return '<th>' + esc(h) + '</th>' }).join('') +
+      '</tr></thead><tbody>' +
+      rows.map(function (r) {
+        return '<tr>' + r.map(function (cell, i) {
+          return '<td class="' + (i === 0 ? 'name' : '') + '">' + cell + '</td>'
+        }).join('') + '</tr>'
+      }).join('') + '</tbody></table></div>'
+  }
+
+  function renderTiles(p) {
+    var u = p.users || {}
+    var uniq = u.unique || {}
+    var nw = u.new || {}
+    var req = p.requests || {}
+    var reqTotal = req.total || {}
+    var lat = (req.latency && req.latency['req:catalog']) || null
+    var lib = p.library || {}
+    return '<div class="grid tiles">' +
+      tile('Active users · today', compact(uniq.today), 'unique key sets', true) +
+      tile('Active · 7 days', compact(uniq.d7), 'unique', true) +
+      tile('Active · 30 days', compact(uniq.d30), 'unique', true) +
+      tile('New users · 30 days', compact(nw.d30), n(nw.today) + ' today') +
+      tile('Requests · today', compact(reqTotal.today), compact(reqTotal.d30) + ' in 30d') +
+      tile('Live libraries', compact(u.cachedLibraries), 'cached ≤24h') +
+      tile('Titles indexed', compact((lib.movies || 0) + (lib.series || 0)), n(lib.movies) + ' mv / ' + n(lib.series) + ' sr') +
+      tile('Catalog latency', lat ? ms(lat.avg7d) : '—', '7d average') +
+      '</div>'
+  }
+
+  function renderTraffic(p) {
+    var req = p.requests || {}
+    var days = p.days || []
+    var hours = p.hours || []
+    var lat = req.latency || {}
+
+    var kinds = Object.keys(p.counters || {})
+      .filter(function (k) { return k.indexOf('req:') === 0 })
+      .map(function (k) { return k.slice(4) })
+      .sort(function (a, b) { return c(p, 'req:' + b) - c(p, 'req:' + a) })
+
+    var rows = kinds.map(function (k) {
+      var l = lat['req:' + k] || {}
+      return [
+        label(k),
+        n(c(p, 'req:' + k, 'today')),
+        n(c(p, 'req:' + k, 'd7')),
+        '<span class="strong">' + n(c(p, 'req:' + k)) + '</span>',
+        l.avg7d !== null && l.avg7d !== undefined ? ms(l.avg7d) : '—',
+      ]
+    })
+
+    var statuses = ['2xx', '3xx', '4xx', '5xx'].filter(function (s) { return c(p, 'status:' + s) > 0 })
+    var statusTotal = statuses.reduce(function (t, s) { return t + c(p, 'status:' + s) }, 0)
+    var statusRows = statuses.map(function (s) {
+      var cls = s === '5xx' ? 'amber' : s === '4xx' ? 'blue' : 'green'
+      return meter('HTTP ' + s, c(p, 'status:' + s), statusTotal, cls,
+        n(c(p, 'status:' + s)) + ' · ' + pct(c(p, 'status:' + s) / (statusTotal || 1)))
+    }).join('')
+
+    return '<div class="grid cols-2">' +
+      card('01', 'c-violet', 'Requests per day', n((req.total || {}).d30) + ' in ' + p.windowDays + 'd',
+        chart(req.daily || [], days.map(dayLabel), '', compact)) +
+      card('02', 'c-blue', 'Requests per hour', 'last 24h',
+        chart(req.hourly || [], hours.map(hourLabel), 'blue', compact)) +
+      '</div>' +
+      '<div class="grid cols-2" style="margin-top:var(--sp-3)">' +
+      card('03', 'c-violet', 'By endpoint', 'avg = 7d',
+        table(['Endpoint', 'Today', '7d', '30d', 'Avg'], rows)) +
+      card('04', 'c-green', 'Response status', statusTotal ? n(statusTotal) + ' responses' : '',
+        statusRows || '<p class="empty">Nothing recorded yet.</p>') +
+      '</div>'
+  }
+
+  function renderUsers(p) {
+    var u = p.users || {}
+    return '<div class="grid cols-2" style="margin-top:var(--sp-3)">' +
+      card('05', 'c-violet', 'Unique users per day', 'HyperLogLog',
+        chart(u.dailyUnique || [], (p.days || []).map(dayLabel), '', n)) +
+      card('06', 'c-green', 'New users per day', n((u.new || {}).d30) + ' in 30d',
+        chart(u.dailyNew || [], (p.days || []).map(dayLabel), 'green', n)) +
+      '</div>'
+  }
+
+  function renderLibraries(p) {
+    var lib = p.library || {}
+    var users = lib.users || 0
+    var avg = function (v) { return users ? Math.round((v || 0) / users) : 0 }
+    var rows = (lib.top || []).map(function (r) {
+      return [
+        esc(r.user) + '…',
+        n(r.movies),
+        n(r.series),
+        n(r.episodes),
+        '<span class="strong">' + n(r.streams) + '</span>',
+        r.buildMs ? ms(r.buildMs) : '—',
+        r.updatedAt ? ago(r.updatedAt) : '—',
+      ]
+    })
+
+    var totals = kv([
+      ['Tracked libraries', lib.truncated ? n(users) + ' of ' + n(lib.tracked) : n(users)],
+      ['Movies', n(lib.movies)],
+      ['Series', n(lib.series)],
+      ['Episodes', n(lib.episodes)],
+      ['Stream links', n(lib.streams)],
+      ['Avg per user', n(avg(lib.movies)) + ' mv · ' + n(avg(lib.series)) + ' sr · ' + n(avg(lib.episodes)) + ' ep'],
+      ['Avg rebuild', ms(((p.requests || {}).latency || {})['lib:build'] ? p.requests.latency['lib:build'].avg30d : null)],
+    ])
+
+    return '<div class="grid cols-2" style="margin-top:var(--sp-3)">' +
+      card('07', 'c-amber', 'Library totals', lib.truncated ? 'sampled' : 'across all users', totals) +
+      card('08', 'c-amber', 'Largest libraries', 'top ' + (lib.top || []).length,
+        table(['User', 'Mv', 'Sr', 'Ep', 'Streams', 'Build', 'Updated'], rows,
+          'No library has been built since tracking started.')) +
+      '</div>'
+  }
+
+  function renderCache(p) {
+    var libHit = c(p, 'lib:hit') + c(p, 'lib:hit_coalesced')
+    var libMiss = c(p, 'lib:revalidate') + c(p, 'lib:force')
+    var libRate = ratio(libHit, libMiss)
+    var tmdbHit = c(p, 'tmdb:hit_memory') + c(p, 'tmdb:hit_redis')
+    var tmdbFetch = c(p, 'tmdb:fetch')
+    var tmdbRate = ratio(tmdbHit, tmdbFetch)
+
+    var cacheInner =
+      meter('Library cache hit rate', libHit, libHit + libMiss, 'green',
+        pct(libRate) + ' · ' + compact(libHit) + '/' + compact(libHit + libMiss)) +
+      meter('TMDB cache hit rate', tmdbHit, tmdbHit + tmdbFetch, 'blue',
+        pct(tmdbRate) + ' · ' + compact(tmdbHit) + '/' + compact(tmdbHit + tmdbFetch)) +
+      meter('Revalidations that skipped a rebuild', c(p, 'lib:unchanged'),
+        c(p, 'lib:unchanged') + c(p, 'lib:rebuild'), '',
+        pct(ratio(c(p, 'lib:unchanged'), c(p, 'lib:rebuild'))) + ' · ' +
+        compact(c(p, 'lib:unchanged')) + ' skipped / ' + compact(c(p, 'lib:rebuild')) + ' built')
+
+    var upstream = kv([
+      ['TorBox /mylist · torrents', n(c(p, 'torbox:mylist:torrents'))],
+      ['TorBox /mylist · webdl', n(c(p, 'torbox:mylist:webdl'))],
+      ['TorBox items seen', n(c(p, 'torbox:items'))],
+      ['TMDB fetches', n(tmdbFetch)],
+      ['TMDB memory hits', n(c(p, 'tmdb:hit_memory')), true],
+      ['TMDB redis hits', n(c(p, 'tmdb:hit_redis')), true],
+      ['TMDB no-match', n(c(p, 'tmdb:no_match')), true],
+      ['Library too large to cache', n(c(p, 'lib:too_big')), true],
+    ])
+
+    return '<div class="grid cols-2" style="margin-top:var(--sp-3)">' +
+      card('09', 'c-green', 'Cache efficiency', p.windowDays + 'd', cacheInner) +
+      card('10', 'c-blue', 'Upstream calls', p.windowDays + 'd', upstream) +
+      '</div>'
+  }
+
+  function renderCustomAndKeyspace(p) {
+    var cs = p.customStreams || {}
+    var custom = kv([
+      ['Live entries', n(cs.entries)],
+      ['Users with entries', n(cs.users)],
+      ['Added · 30d', n(c(p, 'custom:added'))],
+      ['— movies / series', n(c(p, 'custom:added:movie')) + ' / ' + n(c(p, 'custom:added:series')), true],
+      ['— without IMDb id', n(c(p, 'custom:added:no_imdb')), true],
+      ['Removed · 30d', n(c(p, 'custom:removed'))],
+      ['Rejected · limit hit', n(c(p, 'custom:rejected:limit')), true],
+      ['Rejected · unverified keys', n(c(p, 'custom:rejected:unverified')), true],
+      ['Streams served from custom', n(c(p, 'stream:custom')), true],
+    ])
+
+    var ks = p.keyspace || {}
+    var total = ks.total || 0
+    var parts = [
+      ['Library caches', ks.library, ''],
+      ['Parse caches', ks.parseCache, 'blue'],
+      ['TMDB cache + other', ks.tmdbAndOther, 'green'],
+      ['Custom streams', ks.customStreams, 'amber'],
+      ['Rate limiters', ks.rateLimit, ''],
+      ['Stats counters', ks.stats, 'blue'],
+    ]
+    var keyspace = parts.map(function (part) {
+      return meter(part[0], part[1] || 0, total, part[2], n(part[1]))
+    }).join('')
+
+    var info = (p.redis || {}).info
+    var redisRows = [['Keys total', n(total)]]
+    if (info) {
+      if (info.usedMemory) redisRows.push(['Memory used', esc(info.usedMemory)])
+      if (info.peakMemory) redisRows.push(['Memory peak', esc(info.peakMemory), true])
+      if (info.version) redisRows.push(['Redis version', esc(info.version), true])
+      if (info.connectedClients !== null && info.connectedClients !== undefined) redisRows.push(['Clients', n(info.connectedClients), true])
+      if (info.uptimeDays !== null && info.uptimeDays !== undefined) redisRows.push(['Uptime', n(info.uptimeDays) + 'd', true])
+      if (info.keyspaceHits !== null && info.keyspaceMisses !== null && info.keyspaceHits !== undefined) {
+        redisRows.push(['Server hit rate', pct(ratio(info.keyspaceHits, info.keyspaceMisses)), true])
+      }
+      if (info.evictedKeys) redisRows.push(['Evicted keys', n(info.evictedKeys), true])
+    }
+    var rl = p.rateLimit || {}
+    redisRows.push(['IPs under rate limit', n(rl.trackedIps)])
+    Object.keys(rl.byBucket || {}).sort().forEach(function (b) {
+      redisRows.push(['— ' + b, n(rl.byBucket[b]), true])
+    })
+    Object.keys(p.counters || {}).filter(function (k) { return k.indexOf('ratelimit:blocked:') === 0 }).forEach(function (k) {
+      redisRows.push(['429s · ' + k.slice('ratelimit:blocked:'.length), n(c(p, k))])
+    })
+    if (c(p, 'admin:auth_failed')) redisRows.push(['Failed admin logins', n(c(p, 'admin:auth_failed'))])
+
+    return '<div class="grid cols-2" style="margin-top:var(--sp-3)">' +
+      card('11', 'c-amber', 'Custom streams', '', custom) +
+      card('12', 'c-violet', 'Redis keyspace', p.scan && p.scan.truncated ? 'scan truncated' : '',
+        keyspace + '<div style="margin-top:var(--sp-4)">' + kv(redisRows) + '</div>') +
+      '</div>'
+  }
+
+  function renderAllCounters(p) {
+    var events = Object.keys(p.counters || {}).sort(function (a, b) {
+      return c(p, b) - c(p, a) || a.localeCompare(b)
+    })
+    var filtered = events.filter(function (e) {
+      return !counterFilter || e.toLowerCase().indexOf(counterFilter) !== -1
+    })
+    var rows = filtered.map(function (e) {
+      var l = ((p.requests || {}).latency || {})[e]
+      return [
+        label(e),
+        n(c(p, e, 'today')),
+        n(c(p, e, 'd7')),
+        '<span class="strong">' + n(c(p, e)) + '</span>',
+        l && l.avg7d !== null && l.avg7d !== undefined ? ms(l.avg7d) : '—',
+      ]
+    })
+    var inner =
+      '<div style="display:flex;margin-bottom:var(--sp-3)">' +
+      '<input class="filter-input" id="counter-filter" placeholder="filter events…" value="' + esc(counterFilter) + '">' +
+      '</div>' +
+      table(['Event', 'Today', '7d', '30d', 'Avg'], rows, 'No counters recorded yet.')
+    return '<div style="margin-top:var(--sp-3)">' +
+      card('13', 'c-blue', 'All counters', filtered.length + ' / ' + events.length + ' events', inner) +
+      '</div>'
+  }
+
+  function renderBanner(p) {
+    var msgs = []
+    if (p.redis && p.redis.trackingEnabled === false) {
+      msgs.push('Tracking is switched off (<code>STATS_ENABLED=0</code>). Existing counters are shown, but nothing new is recorded.')
+    }
+    if (p.scan && p.scan.truncated) {
+      msgs.push('A keyspace scan hit its safety limit, so keyspace counts are a lower bound.')
+    }
+    if (p.library && p.library.truncated) {
+      msgs.push('Library totals cover ' + n(p.library.sampled) + ' of ' + n(p.library.tracked) +
+        ' tracked libraries — raise <code>STATS_LIBRARY_SAMPLE_LIMIT</code> to include the rest.')
+    }
+    if (!msgs.length) return ''
+    return msgs.map(function (m) {
+      return '<div class="warning"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><div>' + m + '</div></div>'
+    }).join('')
+  }
+
+  function render(p) {
+    lastPayload = p
+    if (p.unavailable) {
+      metaLine.innerHTML = '<span class="dot stale"></span><span>redis not configured</span>'
+      banner.innerHTML = ''
+      body.innerHTML = card('!', 'c-amber', 'No storage configured', '',
+        '<p class="empty">' + esc(p.unavailable) + ' Set <code>REDIS_URL</code> and restart to collect stats.</p>')
+      return
+    }
+
+    metaLine.innerHTML =
+      '<span class="live"><span class="dot' + (p.cached ? ' stale' : '') + '"></span>' +
+      (p.cached ? 'cached snapshot' : 'fresh') + '</span>' +
+      '<span>computed ' + ago(p.generatedAt) + '</span>' +
+      '<span>window ' + p.windowDays + 'd</span>' +
+      '<span>build ' + ms(p.buildMs) + '</span>' +
+      (p.redis && p.redis.dbsize !== null ? '<span>' + n(p.redis.dbsize) + ' keys</span>' : '')
+
+    banner.innerHTML = renderBanner(p)
+    renderBody(p)
+  }
+
+  function renderBody(p) {
+    body.innerHTML =
+      renderTiles(p) +
+      renderTraffic(p) +
+      renderUsers(p) +
+      renderLibraries(p) +
+      renderCache(p) +
+      renderCustomAndKeyspace(p) +
+      renderAllCounters(p)
+    bindFilter()
+  }
+
+  function bindFilter() {
+    var el = document.getElementById('counter-filter')
+    if (!el) return
+    el.addEventListener('input', function () {
+      counterFilter = el.value.trim().toLowerCase()
+      var caret = el.value.length
+      renderBody(lastPayload)
+      var again = document.getElementById('counter-filter')
+      if (again) {
+        again.focus()
+        again.setSelectionRange(caret, caret)
+      }
+    })
+  }
+
+  function fetchStats(fresh) {
+    return fetch('/api/stats' + (fresh ? '?fresh=1' : ''), {
+      headers: { 'x-admin-secret': token },
+      cache: 'no-store',
+    }).then(function (res) {
+      if (res.status === 401) {
+        var err = new Error('Invalid admin token.')
+        err.unauthorized = true
+        throw err
+      }
+      if (res.status === 429) throw new Error('Rate limited — wait a minute and try again.')
+      if (res.status === 503) throw new Error('ADMIN_SECRET is not configured on the server.')
+      if (!res.ok) throw new Error('Server error (HTTP ' + res.status + ').')
+      return res.json()
+    }).then(function (json) {
+      if (!json.ok) throw new Error(json.error || 'Could not load stats.')
+      return json.stats
+    })
+  }
+
+  function load(fresh) {
+    refreshBtn.disabled = true
+    return fetchStats(fresh).then(function (p) {
+      render(p)
+      refreshBtn.disabled = false
+    }).catch(function (err) {
+      refreshBtn.disabled = false
+      if (err.unauthorized) {
+        lock(err.message)
+        return
+      }
+      banner.innerHTML = '<div class="warning"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><div>' + esc(err.message) + '</div></div>'
+    })
+  }
+
+  function setAuto(on) {
+    if (autoTimer) { clearInterval(autoTimer); autoTimer = null }
+    autoBtn.classList.toggle('on', on)
+    if (on) autoTimer = setInterval(function () { load(false) }, 60000)
+  }
+
+  function unlock(payloadToken, remember) {
+    token = payloadToken
+    try {
+      (remember ? localStorage : sessionStorage).setItem(STORE_KEY, token)
+    } catch (e) { /* private mode — keep it in memory only */ }
+    gate.hidden = true
+    dash.hidden = false
+    setAuto(true)
+    load(false)
+  }
+
+  function lock(message) {
+    token = null
+    setAuto(false)
+    try { localStorage.removeItem(STORE_KEY); sessionStorage.removeItem(STORE_KEY) } catch (e) {}
+    dash.hidden = true
+    gate.hidden = false
+    tokenInput.value = ''
+    tokenInput.classList.toggle('invalid', Boolean(message))
+    gateError.textContent = message || ''
+    gateError.style.display = message ? 'block' : 'none'
+    tokenInput.focus()
+  }
+
+  gateForm.addEventListener('submit', function (e) {
+    e.preventDefault()
+    var candidate = tokenInput.value.trim()
+    if (!candidate) return
+    unlockBtn.disabled = true
+    gateError.style.display = 'none'
+    tokenInput.classList.remove('invalid')
+    token = candidate
+    fetchStats(false).then(function (p) {
+      unlockBtn.disabled = false
+      unlock(candidate, rememberInput.checked)
+      render(p)
+    }).catch(function (err) {
+      unlockBtn.disabled = false
+      token = null
+      tokenInput.classList.add('invalid')
+      gateError.textContent = err.message
+      gateError.style.display = 'block'
+    })
+  })
+
+  refreshBtn.addEventListener('click', function () { load(true) })
+  autoBtn.addEventListener('click', function () { setAuto(!autoTimer) })
+  lockBtn.addEventListener('click', function () { lock('') })
+
+  var stored = null
+  try { stored = localStorage.getItem(STORE_KEY) || sessionStorage.getItem(STORE_KEY) } catch (e) {}
+  if (stored) {
+    token = stored
+    gate.hidden = true
+    dash.hidden = false
+    metaLine.innerHTML = '<span class="spinner"></span><span>loading…</span>'
+    setAuto(true)
+    load(false)
+  } else {
+    tokenInput.focus()
+  }
+})()
+</script>
+</body>
+</html>

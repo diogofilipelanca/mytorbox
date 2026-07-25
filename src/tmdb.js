@@ -2,12 +2,16 @@ const crypto = require('crypto')
 const { TMDB_BASE, TMDB_IMAGE_BASE, TMDB_CACHE_TTL_SECONDS, TMDB_NEGATIVE_CACHE_TTL_SECONDS } = require('./config')
 const { getJson } = require('./httpUtils')
 const redis = require('./redisClient')
+const stats = require('./stats')
 
 const cache = new Map()
 const imagesCache = new Map()
 const findCache = new Map()
 async function cachedLookup(ns, l1, l1key, fetchFn) {
-  if (l1.has(l1key)) return l1.get(l1key)
+  if (l1.has(l1key)) {
+    stats.track('tmdb:hit_memory')
+    return l1.get(l1key)
+  }
   const rk = `tmdb:${ns}:${crypto.createHash('sha1').update(l1key).digest('hex')}`
   if (redis) {
     try {
@@ -15,6 +19,7 @@ async function cachedLookup(ns, l1, l1key, fetchFn) {
       if (raw != null) {
         const value = JSON.parse(raw)
         l1.set(l1key, value)
+        stats.track('tmdb:hit_redis')
         return value
       }
     } catch {
@@ -22,6 +27,8 @@ async function cachedLookup(ns, l1, l1key, fetchFn) {
     }
   }
   const value = await fetchFn()
+  stats.track('tmdb:fetch')
+  if (value == null) stats.track('tmdb:no_match')
   l1.set(l1key, value)
   if (redis) {
     // Cache "no match"/errors only briefly so late-arriving TMDB entries surface soon.

@@ -48,11 +48,23 @@ const ADMIN_SECRET = process.env.ADMIN_SECRET || null
 
 const ADDON_ACCESS_TOKEN = process.env.ADDON_ACCESS_TOKEN || null
 
+const STATS_ENABLED = process.env.STATS_ENABLED !== '0'
+const STATS_TTL_SECONDS = 31 * 24 * 60 * 60
+const STATS_RETENTION_DAYS = 30
+const statsFlushSeconds = parseInt(process.env.STATS_FLUSH_SECONDS, 10) 
+const STATS_FLUSH_MS = (Number.isInteger(statsFlushSeconds) && statsFlushSeconds >= 1 ? statsFlushSeconds : 60) * 1000
+const STATS_USER_THROTTLE_MS = 5 * 60 * 1000
+const STATS_SUMMARY_TTL_SECONDS = 60
+const STATS_SCAN_LIMIT = 50000
+const STATS_TOP_LIBRARIES = 10
+const STATS_LIBRARY_SAMPLE_LIMIT = 1000
+
 const RATE_LIMITS = {
   validate: { windowSeconds: 300, limit: 20 },
   customStreamWrite: { windowSeconds: 3600, limit: 30 },
   customStreamRead: { windowSeconds: 300, limit: 60 },
   cacheClear: { windowSeconds: 3600, limit: 5 },
+  stats: { windowSeconds: 300, limit: 40 },
 }
 
 module.exports = {
@@ -84,5 +96,14 @@ module.exports = {
   CUSTOM_STREAM_VERIFY_TTL_SECONDS,
   ADMIN_SECRET,
   ADDON_ACCESS_TOKEN,
+  STATS_ENABLED,
+  STATS_TTL_SECONDS,
+  STATS_RETENTION_DAYS,
+  STATS_FLUSH_MS,
+  STATS_USER_THROTTLE_MS,
+  STATS_SUMMARY_TTL_SECONDS,
+  STATS_SCAN_LIMIT,
+  STATS_TOP_LIBRARIES,
+  STATS_LIBRARY_SAMPLE_LIMIT,
   RATE_LIMITS,
 }
