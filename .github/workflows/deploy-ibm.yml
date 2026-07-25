@@ -27,13 +27,12 @@ jobs:
           ibmcloud login --apikey "$IBM_CLOUD_API_KEY" -r us-east -g Default
           ibmcloud ce project select --name mytorbox
 
-      - name: Rebuild and deploy app from latest main
+      - name: Build and deploy the pushed commit
         run: |
           ibmcloud ce app update --name mytorbox \
             --build-source https://github.com/hackerslash/mytorbox \
             --build-strategy buildpacks \
-            --build-commit main \
-            --rebuild
+            --build-commit "$GITHUB_SHA"
 
       - name: Report status
         run: ibmcloud ce app get --name mytorbox
