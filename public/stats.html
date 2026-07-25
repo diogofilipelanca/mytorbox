@@ -292,8 +292,10 @@
     letter-spacing: 0.05em;
     text-transform: uppercase;
     color: var(--text-2);
+    min-height: calc(2 * 1.5 * var(--fs-xs));
   }
   .tile .v {
+    margin-top: auto;
     font-size: var(--fs-xl);
     font-weight: 700;
     letter-spacing: -0.03em;
@@ -638,10 +640,10 @@
     var lat = (req.latency && req.latency['req:catalog']) || null
     var lib = p.library || {}
     return '<div class="grid tiles">' +
-      tile('Active users · today', compact(uniq.today), 'unique key sets', true) +
+      tile('Active · today', compact(uniq.today), 'unique key sets', true) +
       tile('Active · 7 days', compact(uniq.d7), 'unique', true) +
       tile('Active · 30 days', compact(uniq.d30), 'unique', true) +
-      tile('New users · 30 days', compact(nw.d30), n(nw.today) + ' today') +
+      tile('New · 30 days', compact(nw.d30), n(nw.today) + ' today') +
       tile('Requests · today', compact(reqTotal.today), compact(reqTotal.d30) + ' in 30d') +
       tile('Live libraries', compact(u.cachedLibraries), 'cached ≤24h') +
       tile('Titles indexed', compact((lib.movies || 0) + (lib.series || 0)), n(lib.movies) + ' mv / ' + n(lib.series) + ' sr') +
