@@ -7,10 +7,21 @@ const DEFAULT_RPDB_API_KEY = process.env.RPDB_API_KEY || null
 const BASE_URL = (process.env.BASE_URL || '').replace(/\/$/, '')
 const PORT = parseInt(process.env.PORT || '7000', 10)
 
+// Number of reverse proxies in front of this process. Express only honours that many
+// X-Forwarded-For entries, so the client can't forge the IP the rate limiter keys off.
+// 1 = one reverse proxy (Caddy/nginx/Code Engine). 0 = directly exposed. Never `true`.
+const trustProxyHops = parseInt(process.env.TRUST_PROXY_HOPS || '1', 10)
+const TRUST_PROXY_HOPS = Number.isInteger(trustProxyHops) && trustProxyHops >= 0 ? trustProxyHops : 1
+
 const TORBOX_BASE = 'https://api.torbox.app/v1/api'
 const TMDB_BASE = 'https://api.themoviedb.org/3'
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500'
 const RPDB_BASE = 'https://api.ratingposterdb.com'
+// Stremio's own public OpenSubtitles addon. It serves the `subtitles` resource for `tt`
+// (IMDb) ids only, which is exactly why subtitles never appear for this addon's `tb:` ids —
+// Stremio never queries it for them. We bridge the two namespaces ourselves.
+const OPENSUBTITLES_BASE = 'https://opensubtitles-v3.strem.io'
+const SUBTITLE_CACHE_TTL_SECONDS = 6 * 60 * 60
 
 const LIBRARY_CHECK_INTERVAL_MS = 15 * 60 * 1000
 // Hard expiry for a cached library — evicts inactive users; refreshed on every check.
@@ -34,6 +45,15 @@ const MAX_CACHE_VALUE_BYTES = 900 * 1024
 const CATALOG_PAGE_SIZE = 100
 const VIDEO_EXTENSIONS = new Set(['.mkv', '.mp4', '.avi', '.mov', '.m4v', '.webm', '.ts', '.flv'])
 const MIN_FILE_SIZE_BYTES = 500 * 1024 * 1024
+
+// Subtitle files shipped alongside the video inside a TorBox entry. Served through our
+// own proxy route rather than linked directly, so they can be transcoded to UTF-8 and so
+// the TorBox key never reaches the player. Text formats only — PGS/VOBSUB are bitmap
+// tracks that Stremio can't render from an external URL.
+const SUBTITLE_EXTENSIONS = new Set(['.srt', '.vtt', '.ass', '.ssa', '.sub'])
+// Subtitle files are tens of KB; anything far past that is mislabelled or a font pack.
+const MAX_SUBTITLE_BYTES = 4 * 1024 * 1024
+const SUBFILE_CACHE_TTL_SECONDS = 24 * 60 * 60
 
 const CUSTOM_STREAM_DEFAULT_TTL_MS = 3 * 60 * 60 * 1000
 const CUSTOM_STREAM_MIN_TTL_MS = 5 * 60 * 1000
@@ -60,6 +80,7 @@ const STATS_TOP_LIBRARIES = 10
 const STATS_LIBRARY_SAMPLE_LIMIT = 1000
 
 const RATE_LIMITS = {
+  subfile: { windowSeconds: 300, limit: 300 },
   validate: { windowSeconds: 300, limit: 20 },
   customStreamWrite: { windowSeconds: 3600, limit: 30 },
   customStreamRead: { windowSeconds: 300, limit: 60 },
@@ -73,6 +94,9 @@ module.exports = {
   DEFAULT_RPDB_API_KEY,
   BASE_URL,
   PORT,
+  TRUST_PROXY_HOPS,
+  OPENSUBTITLES_BASE,
+  SUBTITLE_CACHE_TTL_SECONDS,
   TORBOX_BASE,
   TMDB_BASE,
   TMDB_IMAGE_BASE,
@@ -88,6 +112,9 @@ module.exports = {
   CATALOG_PAGE_SIZE,
   VIDEO_EXTENSIONS,
   MIN_FILE_SIZE_BYTES,
+  SUBTITLE_EXTENSIONS,
+  MAX_SUBTITLE_BYTES,
+  SUBFILE_CACHE_TTL_SECONDS,
   CUSTOM_STREAM_DEFAULT_TTL_MS,
   CUSTOM_STREAM_MIN_TTL_MS,
   CUSTOM_STREAM_MAX_TTL_MS,

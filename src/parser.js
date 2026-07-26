@@ -1,7 +1,105 @@
 const { guessit } = require('guessit-js')
 const PTT = require('parse-torrent-title') // narrow fallback: guessit truncates some numeric-leading titles
-const { isVideo } = require('./torbox')
+const { isVideo, isSubtitleFile, extensionOf } = require('./torbox')
 const { MIN_FILE_SIZE_BYTES } = require('./config')
+
+/** Language names and codes as they appear in subtitle filenames. Release packs label
+ *  them inconsistently — "english.srt", "2_English.srt", "Show.S01E01.en.srt", "pt-BR.srt". */
+const RAW_LANGUAGE_ALIASES = {
+  english: 'eng', eng: 'eng', en: 'eng',
+  portuguese: 'por', portugues: 'por', por: 'por', pt: 'por', 'pt-pt': 'por',
+  'portuguese(brazilian)': 'pob', brazilian: 'pob', 'pt-br': 'pob', pob: 'pob',
+  spanish: 'spa', espanol: 'spa', spa: 'spa', es: 'spa',
+  french: 'fre', francais: 'fre', fre: 'fre', fra: 'fre', fr: 'fre',
+  german: 'ger', deutsch: 'ger', ger: 'ger', deu: 'ger', de: 'ger',
+  italian: 'ita', italiano: 'ita', ita: 'ita', it: 'ita',
+  dutch: 'dut', dut: 'dut', nld: 'dut', nl: 'dut',
+  danish: 'dan', dan: 'dan', da: 'dan',
+  swedish: 'swe', swe: 'swe', sv: 'swe',
+  norwegian: 'nor', nor: 'nor', no: 'nor',
+  finnish: 'fin', fin: 'fin', fi: 'fin',
+  polish: 'pol', pol: 'pol', pl: 'pol',
+  russian: 'rus', rus: 'rus', ru: 'rus',
+  japanese: 'jpn', jpn: 'jpn', ja: 'jpn',
+  korean: 'kor', kor: 'kor', ko: 'kor',
+  chinese: 'chi', chi: 'chi', zho: 'chi', zh: 'chi',
+  arabic: 'ara', ara: 'ara', ar: 'ara',
+  turkish: 'tur', tur: 'tur', tr: 'tur',
+  czech: 'cze', cze: 'cze', cs: 'cze',
+  greek: 'gre', gre: 'gre', el: 'gre',
+  hebrew: 'heb', heb: 'heb', he: 'heb',
+  hungarian: 'hun', hun: 'hun', hu: 'hun',
+  romanian: 'rum', rum: 'rum', ro: 'rum',
+}
+
+// "2_English.srt" / "3_Portuguese (Brazilian).srt" — Bluray rips number their tracks.
+const TRACK_NUMBER_PREFIX_RE = /^\d+[_\-. ]+/
+const SDH_RE = /\b(sdh|hi|forced|cc)\b/i
+
+function normaliseLanguageToken(token) {
+  return token.toLowerCase().replace(/[\s_]+/g, '').replace(/[()]/g, '')
+}
+
+// Keys are normalised the same way lookups are, so "Portuguese (Brazilian)" and the
+// alias table can't drift apart over punctuation.
+const LANGUAGE_ALIASES = new Map(
+  Object.entries(RAW_LANGUAGE_ALIASES).map(([k, v]) => [normaliseLanguageToken(k), v])
+)
+
+/** Pull a language out of a subtitle filename. Tries the whole basename first
+ *  ("english.srt"), then each dot-separated tail segment ("Show.S01E01.pt-BR.srt"). */
+function languageFromFilename(filename) {
+  const base = filename.slice(0, filename.length - extensionOf(filename).length)
+  const cleaned = base.replace(TRACK_NUMBER_PREFIX_RE, '')
+
+  const whole = LANGUAGE_ALIASES.get(normaliseLanguageToken(cleaned))
+  if (whole) return whole
+
+  // Two passes, coarse first. Splitting only on dots keeps region-qualified tags like
+  // "pt-BR" intact; splitting on hyphens too would strand a bare "pt" and mislabel a
+  // Brazilian track as European Portuguese. The finer pass then catches "Show_en".
+  for (const pattern of [/\./, /[.\-_]/]) {
+    const segments = cleaned.split(pattern).filter(Boolean)
+    for (let i = segments.length - 1; i >= 0; i--) {
+      const hit = LANGUAGE_ALIASES.get(normaliseLanguageToken(segments[i]))
+      if (hit) return hit
+    }
+  }
+  return null
+}
+
+function isForcedOrSdh(filename) {
+  return SDH_RE.test(filename)
+}
+
+/** Episode info for a subtitle usually isn't in its own filename — a season pack keeps
+ *  `Subs/<Release.Name.S02E01.../english.srt`, so the identity lives in a parent folder.
+ *  Walk the path from the file outwards and take the first segment that parses. */
+function locateEpisodeInPath(path, resolver) {
+  const segments = path.split('/').filter(Boolean)
+  for (let i = segments.length - 1; i >= 0; i--) {
+    const candidate = stripJunkPrefixes(
+      i === segments.length - 1
+        ? segments[i].slice(0, segments[i].length - extensionOf(segments[i]).length)
+        : segments[i]
+    )
+    if (!candidate) continue
+    const guess = resolver.resolve(candidate)
+    const title = fixTruncatedNumericTitle(candidate, titleToString(guess.title))
+    if (!title) continue
+    const isEpisode = guess.type === 'episode'
+    const episode = isEpisode ? (guess.episode ?? guess.absolute_episode ?? null) : null
+    if (isEpisode && episode == null) continue
+    return {
+      title,
+      year: guess.year || null,
+      isEpisode,
+      season: isEpisode ? guess.season || 1 : null,
+      episode,
+    }
+  }
+  return null
+}
 
 function slugify(text) {
   const slug = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
@@ -66,6 +164,41 @@ function makeGuessResolver(loaded) {
 // Default resolver: no caching, straight through to guessit.
 const DIRECT_RESOLVER = { resolve: (str) => guessit(str), current: null }
 
+/** Yield one work item per subtitle file in a mylist entry. Kept separate from the video
+ *  pass because the two need different identity resolution: a video carries its own name,
+ *  a subtitle usually inherits it from the folder it sits in. */
+function* parseSubtitleItems(source, entry, resolver = DIRECT_RESOLVER) {
+  const itemId = entry.id
+  const createdAt = Date.parse(entry.created_at) || 0
+
+  for (const f of entry.files || []) {
+    // Full path, not short_name — the episode identity lives in the parent folders.
+    const path = f.name || f.short_name || ''
+    const base = f.short_name || path.split('/').pop() || ''
+    if (!isSubtitleFile(base)) continue
+
+    let located = locateEpisodeInPath(path, resolver)
+    // A pack whose subtitle folders are unnamed still has the parent torrent name.
+    if (!located && entry.name) {
+      located = locateEpisodeInPath(stripJunkPrefixes(entry.name), resolver)
+    }
+    if (!located) continue
+
+    yield {
+      source,
+      itemId,
+      fileId: f.id,
+      filename: base,
+      path,
+      size: f.size,
+      createdAt,
+      lang: languageFromFilename(base) || 'unknown',
+      forced: isForcedOrSdh(base),
+      ...located,
+    }
+  }
+}
+
 /** Yield one work item per video file in a torbox/webdl mylist entry. */
 function* parseWorkItems(source, entry, resolver = DIRECT_RESOLVER) {
   const itemId = entry.id
@@ -115,4 +248,11 @@ function* parseWorkItems(source, entry, resolver = DIRECT_RESOLVER) {
   }
 }
 
-module.exports = { slugify, parseWorkItems, makeGuessResolver }
+module.exports = {
+  slugify,
+  parseWorkItems,
+  parseSubtitleItems,
+  makeGuessResolver,
+  languageFromFilename,
+  locateEpisodeInPath,
+}

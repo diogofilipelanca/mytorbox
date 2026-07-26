@@ -1,4 +1,4 @@
-const { TORBOX_BASE, VIDEO_EXTENSIONS, TORBOX_PAGE_LIMIT, TORBOX_MAX_PAGES } = require('./config')
+const { TORBOX_BASE, VIDEO_EXTENSIONS, SUBTITLE_EXTENSIONS, TORBOX_PAGE_LIMIT, TORBOX_MAX_PAGES } = require('./config')
 const { getJson } = require('./httpUtils')
 
 const SOURCES = ['torrents', 'webdl']
@@ -23,11 +23,21 @@ async function fetchMylist(source, apiKey, { bypassCache = false } = {}) {
   return all
 }
 
-function isVideo(filename) {
+function extensionOf(filename) {
   const idx = filename.lastIndexOf('.')
-  if (idx === -1) return false
-  const ext = filename.slice(idx).toLowerCase()
-  return VIDEO_EXTENSIONS.has(ext)
+  return idx === -1 ? '' : filename.slice(idx).toLowerCase()
+}
+
+function isVideo(filename) {
+  return VIDEO_EXTENSIONS.has(extensionOf(filename))
+}
+
+function isSubtitleFile(filename) {
+  return SUBTITLE_EXTENSIONS.has(extensionOf(filename))
+}
+
+function isKnownSource(source) {
+  return SOURCES.includes(source)
 }
 
 function buildStreamUrl(source, itemId, fileId, apiKey) {
@@ -35,4 +45,12 @@ function buildStreamUrl(source, itemId, fileId, apiKey) {
   return `${TORBOX_BASE}/${source}/requestdl?token=${apiKey}&${idParam}=${itemId}&file_id=${fileId}&redirect=true`
 }
 
-module.exports = { SOURCES, fetchMylist, isVideo, buildStreamUrl }
+module.exports = {
+  SOURCES,
+  fetchMylist,
+  isVideo,
+  isSubtitleFile,
+  isKnownSource,
+  extensionOf,
+  buildStreamUrl,
+}

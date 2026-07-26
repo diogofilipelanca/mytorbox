@@ -7,6 +7,7 @@ const stats = require('./stats')
 const cache = new Map()
 const imagesCache = new Map()
 const findCache = new Map()
+const externalIdsCache = new Map()
 async function cachedLookup(ns, l1, l1key, fetchFn) {
   if (l1.has(l1key)) {
     stats.track('tmdb:hit_memory')
@@ -55,11 +56,21 @@ async function searchOnce(title, year, kind, apiKey) {
 async function search(title, year, kind, apiKey) {
   const key = `${kind}|${title.trim().toLowerCase()}|${year || ''}`
   return cachedLookup('s', cache, key, async () => {
-    let result = await searchOnce(title, year, kind, apiKey)
-    if (!result && year) {
-      result = await searchOnce(title, null, kind, apiKey)
+    // A TMDB failure must not abort the whole library build. Unlike getImages and
+    // findByImdbId, this call used to let the error propagate all the way out of
+    // buildLibrary, so one bad response emptied the entire catalog. Degrading to null
+    // leaves the item in the catalog under its raw title, just without poster/metadata.
+    try {
+      let result = await searchOnce(title, year, kind, apiKey)
+      if (!result && year) {
+        result = await searchOnce(title, null, kind, apiKey)
+      }
+      return result
+    } catch (err) {
+      console.warn('tmdb: search failed, continuing without a match:', err.message)
+      stats.track('tmdb:search_error')
+      return null
     }
-    return result
   })
 }
 
@@ -103,10 +114,26 @@ async function findByImdbId(imdbId, apiKey) {
   })
 }
 
+/** The reverse of findByImdbId: TMDB id -> IMDb id. The library builds its own `tmdb-<id>`
+ *  canonical keys, but every subtitle provider speaks IMDb, so this is the bridge. */
+async function getExternalIds(kind, tmdbId, apiKey) {
+  const key = `ext:${kind}:${tmdbId}`
+  return cachedLookup('e', externalIdsCache, key, async () => {
+    try {
+      const params = new URLSearchParams({ api_key: apiKey })
+      const data = await getJson(`${TMDB_BASE}/${kind}/${tmdbId}/external_ids?${params.toString()}`)
+      return (data && data.imdb_id) ? { imdbId: data.imdb_id } : null
+    } catch {
+      return null
+    }
+  })
+}
+
 function clearCache() {
   cache.clear()
   imagesCache.clear()
   findCache.clear()
+  externalIdsCache.clear()
 }
 
-module.exports = { search, posterUrl, getImages, logoUrl, findByImdbId, clearCache }
+module.exports = { search, posterUrl, getImages, logoUrl, findByImdbId, getExternalIds, clearCache }

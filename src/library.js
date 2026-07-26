@@ -1,7 +1,7 @@
 const crypto = require('crypto')
 const zlib = require('zlib')
 const { SOURCES, fetchMylist, buildStreamUrl } = require('./torbox')
-const { parseWorkItems, slugify, makeGuessResolver } = require('./parser')
+const { parseWorkItems, parseSubtitleItems, slugify, makeGuessResolver } = require('./parser')
 const tmdb = require('./tmdb')
 const rpdb = require('./rpdb')
 const redis = require('./redisClient')
@@ -36,6 +36,19 @@ function hydrateStreams(entries, torboxKey) {
     title: e.title,
     behaviorHints: e.behaviorHints,
   }))
+}
+
+// Same rule as streamEntry: keep only the coordinates needed to fetch the file later,
+// never the TorBox key — this object is what gets persisted to Redis.
+function subtitleEntry(s) {
+  return {
+    source: s.source,
+    itemId: s.itemId,
+    fileId: s.fileId,
+    filename: s.filename,
+    lang: s.lang,
+    forced: s.forced,
+  }
 }
 
 function posterUrlFor(tmdbRes, kind, rpdbKey) {
@@ -84,6 +97,7 @@ function dedupeByTmdb(keysAndGroups, results, mergeFn) {
 
 function mergeMovieGroups(dst, src) {
   dst.items.push(...src.items)
+  dst.subs.push(...src.subs)
   dst.year = dst.year || src.year
   dst.createdAt = Math.max(dst.createdAt, src.createdAt)
 }
@@ -94,6 +108,10 @@ function mergeSeriesGroups(dst, src) {
   for (const [epKey, items] of src.episodes) {
     if (!dst.episodes.has(epKey)) dst.episodes.set(epKey, [])
     dst.episodes.get(epKey).push(...items)
+  }
+  for (const [epKey, subs] of src.subEpisodes) {
+    if (!dst.subEpisodes.has(epKey)) dst.subEpisodes.set(epKey, [])
+    dst.subEpisodes.get(epKey).push(...subs)
   }
 }
 
@@ -131,9 +149,11 @@ async function buildLibrary(torboxKey, tmdbKey, rpdbKey, entriesBySource = null,
 
   const resolver = makeGuessResolver(await loadParseCache(cacheKey))
   const workItems = []
+  const subtitleItems = []
   for (const source of SOURCES) {
     for (const entry of bySource[source] || []) {
       workItems.push(...parseWorkItems(source, entry, resolver))
+      subtitleItems.push(...parseSubtitleItems(source, entry, resolver))
     }
   }
   await saveParseCache(cacheKey, resolver.current)
@@ -145,7 +165,7 @@ async function buildLibrary(torboxKey, tmdbKey, rpdbKey, entriesBySource = null,
     if (w.isEpisode) {
       const key = slugify(w.title)
       if (!seriesGroups.has(key)) {
-        seriesGroups.set(key, { title: w.title, year: null, createdAt: 0, episodes: new Map() })
+        seriesGroups.set(key, { title: w.title, year: null, createdAt: 0, episodes: new Map(), subEpisodes: new Map() })
       }
       const g = seriesGroups.get(key)
       g.year = g.year || w.year
@@ -156,11 +176,30 @@ async function buildLibrary(torboxKey, tmdbKey, rpdbKey, entriesBySource = null,
     } else {
       const key = `${slugify(w.title)}-${w.year || 'na'}`
       if (!movieGroups.has(key)) {
-        movieGroups.set(key, { title: w.title, year: w.year, createdAt: 0, items: [] })
+        movieGroups.set(key, { title: w.title, year: w.year, createdAt: 0, items: [], subs: [] })
       }
       const g = movieGroups.get(key)
       g.items.push(w)
       g.createdAt = Math.max(g.createdAt, w.createdAt)
+    }
+  }
+
+  // Attach subtitles to groups that already have a video. A subtitle on its own has
+  // nothing to attach to and no catalog entry of its own, so it's dropped.
+  for (const s of subtitleItems) {
+    if (s.isEpisode) {
+      const g = seriesGroups.get(slugify(s.title))
+      if (!g) continue
+      const epKey = `${s.season}:${s.episode}`
+      // Only if the episode itself exists — a subtitle for an episode we don't have
+      // would produce a stream-less entry.
+      if (!g.episodes.has(epKey)) continue
+      if (!g.subEpisodes.has(epKey)) g.subEpisodes.set(epKey, [])
+      g.subEpisodes.get(epKey).push(s)
+    } else {
+      const g = movieGroups.get(`${slugify(s.title)}-${s.year || 'na'}`)
+      if (!g) continue
+      g.subs.push(s)
     }
   }
 
@@ -174,7 +213,7 @@ async function buildLibrary(torboxKey, tmdbKey, rpdbKey, entriesBySource = null,
     tmdb.search(g.title, g.year, 'tv', tmdbKey)
   )
 
-  const lib = { movies: [], series: [], meta: {}, streams: {} }
+  const lib = { movies: [], series: [], meta: {}, streams: {}, subtitles: {} }
 
   const moviesMerged = dedupeByTmdb(movieKeys, movieResults, mergeMovieGroups).sort(byCreatedAtDesc)
   const seriesMerged = dedupeByTmdb(seriesKeys, seriesResults, mergeSeriesGroups).sort(byCreatedAtDesc)
@@ -201,6 +240,7 @@ async function buildLibrary(torboxKey, tmdbKey, rpdbKey, entriesBySource = null,
     lib.movies.push(preview)
     lib.meta[mid] = { ...preview, description: tmdbRes ? tmdbRes.overview : null }
     lib.streams[mid] = sortedBySize(g.items).map(streamEntry)
+    if (g.subs.length) lib.subtitles[mid] = g.subs.map(subtitleEntry)
   })
 
   seriesMerged.forEach(([canonical, g, tmdbRes], i) => {
@@ -233,6 +273,8 @@ async function buildLibrary(torboxKey, tmdbKey, rpdbKey, entriesBySource = null,
         episode,
       })
       lib.streams[vid] = sortedBySize(items).map(streamEntry)
+      const epSubs = g.subEpisodes.get(epKey)
+      if (epSubs && epSubs.length) lib.subtitles[vid] = epSubs.map(subtitleEntry)
     }
 
     lib.series.push(preview)
@@ -414,4 +456,4 @@ async function clearCache() {
   }
 }
 
-module.exports = { getLibrary, buildLibrary, clearCache, posterUrlFor, mapLimit, hydrateStreams }
+module.exports = { getLibrary, buildLibrary, clearCache, posterUrlFor, mapLimit, hydrateStreams, subtitleEntry }

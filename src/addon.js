@@ -1,6 +1,7 @@
 const config = require('./config')
 const { getLibrary, hydrateStreams } = require('./library')
 const { buildCustomCatalog } = require('./customCatalog')
+const subtitles = require('./subtitles')
 
 const HAS_DEFAULTS = Boolean(config.DEFAULT_TORBOX_API_KEY && config.DEFAULT_TMDB_API_KEY)
 
@@ -17,6 +18,9 @@ const manifest = {
     'catalog',
     { name: 'meta', types: ['movie', 'series'], idPrefixes: ['tb:'] },
     { name: 'stream', types: ['movie', 'series'], idPrefixes: ['tb:'] },
+    // Third-party subtitle addons only answer for `tt` ids, so they are never consulted
+    // for our `tb:` ids. Declaring the resource here lets us bridge to them ourselves.
+    { name: 'subtitles', types: ['movie', 'series'], idPrefixes: ['tb:'] },
   ],
   types: ['movie', 'series'],
   catalogs: [
@@ -108,6 +112,32 @@ async function getStream({ type, id, config: cfg }) {
   return { streams: hydrateStreams(entries, keys.torboxKey) }
 }
 
+async function getSubtitles({ type, id, config: cfg, extra, urlContext }) {
+  const keys = resolveKeys(cfg)
+  if (!keys) return { subtitles: [] }
+
+  // Custom streams are bare URLs with no container to look inside, so they only ever
+  // get upstream subtitles.
+  let localEntries = []
+  if (!id.startsWith('tb:custom:')) {
+    try {
+      const lib = await getLibrary(keys.torboxKey, keys.tmdbKey, keys.rpdbKey)
+      localEntries = (lib.subtitles && lib.subtitles[id]) || []
+    } catch (err) {
+      // A library failure must not cost the user their upstream subtitles too.
+      console.warn('addon: library lookup failed for subtitles:', err.message)
+    }
+  }
+
+  return subtitles.getSubtitles({ type, id, keys, extra, localEntries, urlContext })
+}
+
+/** Resolve the TorBox key for a subfile proxy request. */
+function torboxKeyFor(cfg) {
+  const keys = resolveKeys(cfg)
+  return keys ? keys.torboxKey : null
+}
+
 function manifestFor(cfg) {
   return {
     ...manifest,
@@ -118,4 +148,14 @@ function manifestFor(cfg) {
   }
 }
 
-module.exports = { manifest, manifestFor, resolveKeys, HAS_DEFAULTS, getCatalog, getMeta, getStream }
+module.exports = {
+  manifest,
+  manifestFor,
+  resolveKeys,
+  HAS_DEFAULTS,
+  getCatalog,
+  getMeta,
+  getStream,
+  getSubtitles,
+  torboxKeyFor,
+}

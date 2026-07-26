@@ -1,5 +1,14 @@
+const net = require('net')
 const redis = require('./redisClient')
 const stats = require('./stats')
+
+/** req.ip is only as trustworthy as the `trust proxy` setting, and an unvalidated value
+ *  becomes part of a Redis key name. Folding anything that isn't a real IP into a single
+ *  bucket stops a rotating header from both bypassing the limit and minting unbounded keys. */
+function clientKey(req) {
+  const raw = req.ip || req.socket.remoteAddress || ''
+  return net.isIP(raw) ? raw : 'unknown'
+}
 
 // Used only when Redis isn't configured (local dev). Not viable across serverless instances,
 // but keeps the limiter functional for a single long-running process.
@@ -21,9 +30,12 @@ async function withinLimit(key, windowSeconds, limit) {
   return entry.count <= limit
 }
 
-function rateLimit(prefix, { windowSeconds, limit }) {
+/** `failClosed` rejects when the limiter itself errors. Use it on anything guarding a
+ *  credential (the admin routes): a Redis outage must not silently remove the only brake
+ *  on brute-forcing ADMIN_SECRET. Everything else stays fail-open for availability. */
+function rateLimit(prefix, { windowSeconds, limit }, { failClosed = false } = {}) {
   return async (req, res, next) => {
-    const ip = req.ip || req.socket.remoteAddress || 'unknown'
+    const ip = clientKey(req)
     try {
       const allowed = await withinLimit(`rl:${prefix}:${ip}`, windowSeconds, limit)
       if (!allowed) {
@@ -32,10 +44,16 @@ function rateLimit(prefix, { windowSeconds, limit }) {
         return
       }
     } catch (err) {
+      if (failClosed) {
+        console.error(`rateLimit: check failed for ${prefix}, refusing request:`, err.message)
+        stats.track(`ratelimit:failclosed:${prefix}`)
+        res.status(503).json({ ok: false, error: 'Rate limiter unavailable' })
+        return
+      }
       console.warn(`rateLimit: check failed for ${prefix}, allowing request:`, err.message)
     }
     next()
   }
 }
 
-module.exports = { rateLimit }
+module.exports = { rateLimit, clientKey }

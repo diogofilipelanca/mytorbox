@@ -1,0 +1,36 @@
+{$DOMAIN} {
+	encode gzip
+
+	# Caddy overwrites X-Forwarded-For with the real client address and appends itself,
+	# which is exactly what TRUST_PROXY_HOPS=1 expects on the app side.
+	reverse_proxy addon:7000
+
+	# The addon sets its own CSP and Referrer-Policy via helmet; HSTS is Caddy's job
+	# since it owns TLS.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	# The admin surface has no business being reachable from the open internet.
+	# Replace with your own address, or delete both blocks to expose it publicly
+	# (it still requires ADMIN_SECRET either way).
+	@admin path /stats /api/stats /api/cache/clear
+	handle @admin {
+		@blocked not remote_ip 127.0.0.1/32 ::1/128
+		respond @blocked 404
+		reverse_proxy addon:7000
+	}
+
+	log {
+		output file /data/access.log {
+			roll_size 10mb
+			roll_keep 5
+		}
+		# Install URLs can carry API keys in the path when the :config form is used.
+		# Logging the full URI would persist them; log only the method and status.
+		format filter {
+			request>uri delete
+		}
+	}
+}
