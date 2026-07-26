@@ -122,31 +122,57 @@ async function cachedUpstream(type, id, extra) {
 }
 
 /** Stremio expects every subtitle to carry a unique id; upstream ids are only unique
- *  within one response, so namespace them to avoid collisions between providers. */
-function normalise(subtitles) {
+ *  within one response, so namespace them by provider and by video. */
+function normalise(subtitles, videoId) {
   return subtitles
     .filter((s) => s && s.url)
     .map((s, i) => ({
-      id: `os-${s.id != null ? s.id : i}`,
+      id: trackId('os', videoId, s.id != null ? s.id : i),
       url: s.url,
       lang: s.lang || s.language || 'unknown',
     }))
+}
+
+/**
+ * Every episode in a season pack ships its subtitle under the same basename —
+ * "Subs/<episode>/english.srt". Players (and the Stremio shell) commonly key their
+ * subtitle cache on the trailing path segment rather than the full URL, so two episodes
+ * both ending in "english.srt" serve the first one's text for the second, until the app
+ * is restarted. Making the last segment unique per file removes the collision.
+ */
+function uniqueSubtitleName(entry) {
+  const raw = entry.filename || 'subtitle.srt'
+  const dot = raw.lastIndexOf('.')
+  const base = dot === -1 ? raw : raw.slice(0, dot)
+  const ext = dot === -1 ? '.srt' : raw.slice(dot)
+  return `${base}-${entry.itemId}-${entry.fileId}${ext}`
 }
 
 /** Build the proxy URL for a subtitle file that lives inside the user's TorBox entry.
  *  Routed through this addon rather than linked directly to TorBox — see subfile.js. */
 function localSubtitleUrl(entry, { baseUrl, configPath }) {
   const prefix = configPath ? `${baseUrl}/${configPath}` : baseUrl
-  const name = encodeURIComponent(entry.filename || 'subtitle.srt')
+  const name = encodeURIComponent(uniqueSubtitleName(entry))
   return `${prefix}/subfile/${entry.source}/${entry.itemId}/${entry.fileId}/${name}`
+}
+
+/** Track ids must be distinct per video, not just per file. Without the video id in
+ *  here, moving to the next episode leaves Stremio unable to tell the new tracks from
+ *  the ones it already has selected. */
+function trackId(prefix, videoId, suffix) {
+  return `${prefix}-${slugifyId(videoId)}-${suffix}`
+}
+
+function slugifyId(videoId) {
+  return String(videoId || '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '')
 }
 
 /** Subtitles shipped with the file are cut for that exact encode, so they're almost
  *  always better synced than a generic download. They go first; Stremio keeps the order. */
-function localSubtitles(entries, urlContext) {
+function localSubtitles(entries, urlContext, videoId) {
   if (!Array.isArray(entries)) return []
   return entries.map((e, i) => ({
-    id: `tb-${e.source}-${e.itemId}-${e.fileId}-${i}`,
+    id: trackId('tb', videoId, `${e.source}-${e.itemId}-${e.fileId}-${i}`),
     url: localSubtitleUrl(e, urlContext),
     lang: e.forced ? `${e.lang}-forced` : e.lang,
   }))
@@ -158,7 +184,7 @@ async function getSubtitles({ type, id, keys, extra = {}, localEntries = [], url
   const parsed = parseAddonId(id)
   if (!parsed) return { subtitles: [] }
 
-  const local = urlContext ? localSubtitles(localEntries, urlContext) : []
+  const local = urlContext ? localSubtitles(localEntries, urlContext, id) : []
   if (local.length) stats.track('subtitles:local', local.length)
 
   const imdbId = await imdbIdFor(parsed, keys.tmdbKey)
@@ -168,7 +194,7 @@ async function getSubtitles({ type, id, keys, extra = {}, localEntries = [], url
   let upstream = []
   if (target) {
     const upstreamType = parsed.kind === 'tv' ? 'series' : 'movie'
-    upstream = normalise(await cachedUpstream(upstreamType, target, extra))
+    upstream = normalise(await cachedUpstream(upstreamType, target, extra), id)
   }
 
   const subtitles = [...local, ...upstream]
@@ -176,4 +202,11 @@ async function getSubtitles({ type, id, keys, extra = {}, localEntries = [], url
   return { subtitles }
 }
 
-module.exports = { getSubtitles, parseAddonId, imdbIdFor, upstreamId, localSubtitles }
+module.exports = {
+  getSubtitles,
+  parseAddonId,
+  imdbIdFor,
+  upstreamId,
+  localSubtitles,
+  uniqueSubtitleName,
+}

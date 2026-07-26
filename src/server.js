@@ -556,7 +556,9 @@ async function subfileHandler(req, res) {
       res.status(404).type('text/plain').send('Not found')
       return
     }
-    res.set('Cache-Control', 'public, max-age=3600')
+    // `private` keeps shared proxies out of it, and revalidation means a client that
+    // does key its cache loosely still checks back rather than serving a stale episode.
+    res.set('Cache-Control', 'private, max-age=0, must-revalidate')
     res.type(file.contentType).send(file.text)
   } catch (err) {
     console.error('subfile handler error:', err)

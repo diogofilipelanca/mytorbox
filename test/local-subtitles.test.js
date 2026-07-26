@@ -5,7 +5,7 @@ process.env.TRUST_PROXY_HOPS = '0'
 
 const { parseSubtitleItems, parseWorkItems, languageFromFilename, makeGuessResolver } = require('../src/parser')
 const { decodeSubtitle, validCoordinates, contentTypeFor } = require('../src/subfile')
-const { localSubtitles } = require('../src/subtitles')
+const { localSubtitles, uniqueSubtitleName } = require('../src/subtitles')
 const tmdb = require('../src/tmdb')
 const { buildLibrary } = require('../src/library')
 
@@ -164,7 +164,7 @@ test('local subtitle URLs point at our proxy, never at TorBox', () => {
   ]
   const out = localSubtitles(entries, { baseUrl: 'https://addon.example', configPath: 'CFG' })
 
-  assert.equal(out[0].url, 'https://addon.example/CFG/subfile/torrents/42/3/english.srt')
+  assert.equal(out[0].url, 'https://addon.example/CFG/subfile/torrents/42/3/english-42-3.srt')
   assert.equal(out[0].lang, 'eng')
   assert.equal(out[1].lang, 'por-forced', 'forced tracks should be distinguishable')
   assert.ok(out.every((s) => !s.url.includes('torbox.app')))
@@ -172,10 +172,57 @@ test('local subtitle URLs point at our proxy, never at TorBox', () => {
   assert.equal(new Set(out.map((s) => s.id)).size, out.length, 'ids must be unique')
 })
 
+// Regression: watching episode 1 then jumping to episode 2 showed episode 1's subtitles
+// until Stremio was restarted. Both episodes live in the same torrent and both ship
+// their track as "english.srt", so the URLs differed only in a middle path segment —
+// which a cache keyed on the trailing filename collapses into one entry.
+test('two episodes in one pack get distinct filenames and track ids', () => {
+  const ctx = { baseUrl: 'https://addon.example', configPath: null }
+  const ep1 = localSubtitles(
+    [{ source: 'torrents', itemId: 42, fileId: 3, filename: 'english.srt', lang: 'eng' }],
+    ctx,
+    'tb:series:tmdb-1234:2:1'
+  )
+  const ep2 = localSubtitles(
+    [{ source: 'torrents', itemId: 42, fileId: 5, filename: 'english.srt', lang: 'eng' }],
+    ctx,
+    'tb:series:tmdb-1234:2:2'
+  )
+
+  const tail = (u) => u.split('/').pop()
+  assert.notEqual(tail(ep1[0].url), tail(ep2[0].url), 'trailing filename must differ')
+  assert.equal(tail(ep1[0].url), 'english-42-3.srt')
+  assert.equal(tail(ep2[0].url), 'english-42-5.srt')
+
+  assert.notEqual(ep1[0].id, ep2[0].id, 'track ids must differ between episodes')
+  assert.ok(ep1[0].id.includes('2-1'), 'track id should carry the episode')
+  assert.ok(ep2[0].id.includes('2-2'))
+})
+
+test('uniqueSubtitleName keeps the extension and survives odd names', () => {
+  assert.equal(uniqueSubtitleName({ filename: 'english.srt', itemId: 1, fileId: 2 }), 'english-1-2.srt')
+  assert.equal(uniqueSubtitleName({ filename: 'pt-BR.ass', itemId: 9, fileId: 4 }), 'pt-BR-9-4.ass')
+  assert.equal(uniqueSubtitleName({ filename: 'noext', itemId: 1, fileId: 1 }), 'noext-1-1.srt')
+  assert.equal(uniqueSubtitleName({ itemId: 1, fileId: 1 }), 'subtitle-1-1.srt')
+})
+
+test('the same episode still yields one distinct id per language', () => {
+  const out = localSubtitles(
+    [
+      { source: 'torrents', itemId: 42, fileId: 3, filename: 'english.srt', lang: 'eng' },
+      { source: 'torrents', itemId: 42, fileId: 4, filename: 'portuguese.srt', lang: 'por' },
+    ],
+    { baseUrl: 'https://addon.example', configPath: null },
+    'tb:series:tmdb-1234:2:1'
+  )
+  assert.equal(new Set(out.map((s) => s.id)).size, 2)
+  assert.equal(new Set(out.map((s) => s.url)).size, 2)
+})
+
 test('local subtitle URLs work without a config path (defaults mode)', () => {
   const out = localSubtitles(
     [{ source: 'webdl', itemId: 7, fileId: 1, filename: 'english.srt', lang: 'eng' }],
     { baseUrl: 'https://addon.example', configPath: null }
   )
-  assert.equal(out[0].url, 'https://addon.example/subfile/webdl/7/1/english.srt')
+  assert.equal(out[0].url, 'https://addon.example/subfile/webdl/7/1/english-7-1.srt')
 })
