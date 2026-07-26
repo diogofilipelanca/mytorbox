@@ -7,35 +7,11 @@ services:
       PORT: 7000
       # No REDIS_URL here on purpose. `environment:` overrides `env_file:`, so setting it
       # would force a value regardless of what .env says. Running without Redis means the
-      # library/TMDB/parse caches live in the process and are rebuilt after a restart —
-      # see DEPLOY.md for what that costs.
-    networks: [internal]
-    # NOTE: no `ports:` here, deliberately.
-    # TRUST_PROXY_HOPS=1 tells Express to honour one X-Forwarded-For entry. That is only
-    # safe while Caddy is the sole way in — if this port were published on the host,
-    # anyone could hit it directly and forge that header, defeating every rate limit.
-
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
+      # library/TMDB/parse caches live in the process and are rebuilt after a restart.
     ports:
-      - "80:80"
-      - "443:443"
-    environment:
-      # Set DOMAIN in .env — Caddy provisions a Let's Encrypt certificate for it
-      # automatically. A bare IP will NOT work; Let's Encrypt only issues for names.
-      DOMAIN: ${DOMAIN}
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on: [addon]
-    networks: [internal]
-
-networks:
-  internal:
-    driver: bridge
-
-volumes:
-  caddy_data:
-  caddy_config:
+      # Bound to loopback ONLY — nginx on the host is the sole ingress.
+      # The `127.0.0.1:` prefix is load-bearing, not cosmetic: without it Docker publishes
+      # on 0.0.0.0 and punches through ufw via its own iptables rules, exposing the addon
+      # directly. TRUST_PROXY_HOPS=1 assumes a proxy in front, so a directly reachable
+      # port would let anyone forge X-Forwarded-For and walk past every rate limit.
+      - "127.0.0.1:7000:7000"
