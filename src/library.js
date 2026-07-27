@@ -39,13 +39,24 @@ function streamEntry(w) {
   }
 }
 
-function hydrateStreams(entries, torboxKey) {
-  return entries.map((e) => ({
-    url: buildStreamUrl(e.source, e.itemId, e.fileId, torboxKey),
-    name: e.name,
-    title: e.title,
-    behaviorHints: e.behaviorHints,
-  }))
+/**
+ * `subtitles` rides on the Stream object rather than only coming from the subtitles
+ * resource. When Stremio auto-advances within a bingeGroup it resolves the next stream
+ * but carries player state across the transition, so a separately-fetched subtitle list
+ * arrives and is ignored — the previous episode's track stays on screen. Delivering the
+ * tracks as part of the newly-resolved stream means there is no separate list to apply.
+ */
+function hydrateStreams(entries, torboxKey, { subtitles = [] } = {}) {
+  return entries.map((e) => {
+    const stream = {
+      url: buildStreamUrl(e.source, e.itemId, e.fileId, torboxKey),
+      name: e.name,
+      title: e.title,
+      behaviorHints: e.behaviorHints,
+    }
+    if (subtitles.length) stream.subtitles = subtitles
+    return stream
+  })
 }
 
 // Same rule as streamEntry: keep only the coordinates needed to fetch the file later,

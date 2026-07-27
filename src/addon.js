@@ -95,7 +95,7 @@ async function getMeta({ type, id, config: cfg }) {
   return { meta: item }
 }
 
-async function getStream({ type, id, config: cfg }) {
+async function getStream({ type, id, config: cfg, urlContext }) {
   const keys = resolveKeys(cfg)
   if (!keys) return { streams: [] }
 
@@ -109,7 +109,14 @@ async function getStream({ type, id, config: cfg }) {
   const lib = await getLibrary(keys.torboxKey, keys.tmdbKey, keys.rpdbKey)
   const entries = lib.streams[id]
   if (!entries) return null
-  return { streams: hydrateStreams(entries, keys.torboxKey) }
+
+  // Attach this episode's own subtitle tracks to the stream — see hydrateStreams.
+  const localEntries = (lib.subtitles && lib.subtitles[id]) || []
+  const attached = urlContext && localEntries.length
+    ? subtitles.localSubtitles(localEntries, urlContext, id)
+    : []
+
+  return { streams: hydrateStreams(entries, keys.torboxKey, { subtitles: attached }) }
 }
 
 async function getSubtitles({ type, id, config: cfg, extra, urlContext }) {

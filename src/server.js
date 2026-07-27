@@ -463,7 +463,10 @@ async function streamHandler(req, res) {
   const type = req.params.type
   const id = stripJsonExt(req.params.idWithExt)
   try {
-    const result = await addon.getStream({ type, id, config: cfg })
+    const result = await addon.getStream({
+      type, id, config: cfg,
+      urlContext: { baseUrl: publicBaseUrl(req), configPath: req.params.config || null },
+    })
     if (!result) {
       stats.track('stream:not_found')
       res.status(404).json({ err: 'not found' })

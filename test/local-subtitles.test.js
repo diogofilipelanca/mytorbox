@@ -291,3 +291,56 @@ test('bingeGroup is shared across a pack by default, per-episode when toggled', 
   assert.match(s1, /s2e1$/)
   assert.match(s2, /s2e2$/)
 })
+
+// --- subtitles attached to the Stream object ---
+
+test('streams carry their own episode subtitles', async () => {
+  const addon = require('../src/addon')
+  const lib = await buildLibrary('k', 't', null, { torrents: [seasonPackEntry()], webdl: [] }, null)
+  const seriesId = Object.keys(lib.meta).find((k) => k.startsWith('tb:series:'))
+
+  const { hydrateStreams } = require('../src/library')
+  const { localSubtitles } = require('../src/subtitles')
+  const ctx = { baseUrl: 'https://addon.example', configPath: null }
+
+  const e1 = `${seriesId}:2:1`
+  const e2 = `${seriesId}:2:2`
+
+  const s1 = hydrateStreams(lib.streams[e1], 'KEY', {
+    subtitles: localSubtitles(lib.subtitles[e1], ctx, e1),
+  })
+  const s2 = hydrateStreams(lib.streams[e2], 'KEY', {
+    subtitles: localSubtitles(lib.subtitles[e2], ctx, e2),
+  })
+
+  assert.equal(s1[0].subtitles.length, 2, 'episode 1 should carry both languages')
+  assert.equal(s2[0].subtitles.length, 1)
+
+  // The whole point: the tracks bound to each stream must be that episode's.
+  assert.notDeepEqual(
+    s1[0].subtitles.map((s) => s.url),
+    s2[0].subtitles.map((s) => s.url)
+  )
+  assert.ok(s1[0].subtitles.every((s) => s.id && s.url && s.lang))
+})
+
+test('a stream with no local subtitles omits the field entirely', () => {
+  const { hydrateStreams } = require('../src/library')
+  const out = hydrateStreams(
+    [{ source: 'torrents', itemId: 1, fileId: 1, name: 'TorBox', title: 'x', behaviorHints: {} }],
+    'KEY'
+  )
+  assert.ok(!('subtitles' in out[0]), 'empty array would show as an empty track list')
+})
+
+test('attached subtitles still never expose the TorBox key', async () => {
+  const lib = await buildLibrary('LEAKY-KEY', 't', null, { torrents: [seasonPackEntry()], webdl: [] }, null)
+  const seriesId = Object.keys(lib.meta).find((k) => k.startsWith('tb:series:'))
+  const e1 = `${seriesId}:2:1`
+  const { hydrateStreams } = require('../src/library')
+  const { localSubtitles } = require('../src/subtitles')
+  const out = hydrateStreams(lib.streams[e1], 'LEAKY-KEY', {
+    subtitles: localSubtitles(lib.subtitles[e1], { baseUrl: 'https://a.example', configPath: null }, e1),
+  })
+  assert.ok(!JSON.stringify(out[0].subtitles).includes('LEAKY-KEY'))
+})
