@@ -344,3 +344,15 @@ test('attached subtitles still never expose the TorBox key', async () => {
   })
   assert.ok(!JSON.stringify(out[0].subtitles).includes('LEAKY-KEY'))
 })
+
+test('streams declare a real filename so Stremio stops deriving one from the URL', async () => {
+  const lib = await buildLibrary('SECRET-TORBOX-KEY', 't', null, { torrents: [seasonPackEntry()], webdl: [] }, null)
+  const seriesId = Object.keys(lib.meta).find((k) => k.startsWith('tb:series:'))
+  const entry = lib.streams[`${seriesId}:2:1`][0]
+
+  assert.equal(entry.behaviorHints.filename, 'Some.Show.S02E01.1080p.WEBRip.x265-GROUP.mkv')
+  assert.ok(!entry.behaviorHints.filename.includes('requestdl'))
+  assert.ok(!entry.behaviorHints.filename.includes('token='))
+  assert.ok(!JSON.stringify(entry).includes('SECRET-TORBOX-KEY'))
+  assert.equal(entry.behaviorHints.videoSize, 900_000_000)
+})

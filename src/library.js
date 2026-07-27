@@ -35,7 +35,17 @@ function streamEntry(w) {
     fileId: w.fileId,
     name: 'TorBox',
     title: `${w.filename}\n${sizeGb.toFixed(2)} GB`,
-    behaviorHints: { bingeGroup: bingeGroupFor(w) },
+    behaviorHints: {
+      bingeGroup: bingeGroupFor(w),
+      // Without this, Stremio derives the "filename" it reports back (and forwards to
+      // subtitle providers) from the last path segment of the stream URL. TorBox takes
+      // its credential as a query parameter, so that derived value is literally
+      // "requestdl?token=<TORBOX_API_KEY>&..." — which then lands in access logs and in
+      // every subtitles request. Declaring the real filename stops that at the source,
+      // and gives subtitle providers something useful to match on.
+      filename: w.filename,
+      videoSize: w.size || undefined,
+    },
   }
 }
 
