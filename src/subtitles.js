@@ -69,11 +69,22 @@ function upstreamId(imdbId, parsed) {
   return `${imdbId}:${parsed.season}:${parsed.episode}`
 }
 
-/** Forward the hints Stremio sends (videoHash, videoSize, filename) — they materially
- *  improve match quality, and the upstream addon knows what to do with them. */
+/**
+ * Forward only the hints that are safe to hand to a third party.
+ *
+ * `filename` is deliberately NOT forwarded, and must never be added back. Stremio derives
+ * it from the last path segment of the stream URL, and TorBox's requestdl endpoint takes
+ * its credential as a query parameter — so the "filename" Stremio sends looks like:
+ *
+ *   requestdl?token=<TORBOX_API_KEY>&torrent_id=...&file_id=...&redirect=true
+ *
+ * Forwarding that sends the user's TorBox API key to whichever subtitle provider is
+ * configured. videoHash and videoSize are opaque numbers and carry nothing sensitive.
+ */
+const FORWARDABLE_EXTRAS = ['videoHash', 'videoSize']
+
 function extraSegment(extra) {
-  const allowed = ['videoHash', 'videoSize', 'filename']
-  const pairs = allowed
+  const pairs = FORWARDABLE_EXTRAS
     .filter((k) => extra && extra[k] != null && extra[k] !== '')
     .map((k) => `${k}=${encodeURIComponent(extra[k])}`)
   return pairs.length ? `/${pairs.join('&')}` : ''

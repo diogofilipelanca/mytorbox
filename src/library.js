@@ -11,12 +11,22 @@ const {
   LIBRARY_HARD_TTL_MS,
   PARSE_CACHE_TTL_SECONDS,
   MAX_CACHE_VALUE_BYTES,
+  BINGE_GROUP_PER_EPISODE,
 } = require('./config')
 
 const TMDB_CONCURRENCY = 5
 
 // Cached streams keep only what's needed to rebuild the download URL later —
 // never the raw TorBox key, since this object is what gets persisted to Redis.
+/** See BINGE_GROUP_PER_EPISODE in config.js — this is the knob for whether Stremio
+ *  treats consecutive episodes as one continuous playback session. */
+function bingeGroupFor(w) {
+  if (BINGE_GROUP_PER_EPISODE && w.isEpisode) {
+    return `torbox-${w.itemId}-s${w.season}e${w.episode}`
+  }
+  return `torbox-${w.itemId}`
+}
+
 function streamEntry(w) {
   const sizeGb = (w.size || 0) / 1024 ** 3
   return {
@@ -25,7 +35,7 @@ function streamEntry(w) {
     fileId: w.fileId,
     name: 'TorBox',
     title: `${w.filename}\n${sizeGb.toFixed(2)} GB`,
-    behaviorHints: { bingeGroup: `torbox-${w.itemId}` },
+    behaviorHints: { bingeGroup: bingeGroupFor(w) },
   }
 }
 

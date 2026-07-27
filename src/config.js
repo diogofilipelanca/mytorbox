@@ -42,6 +42,14 @@ const TMDB_NEGATIVE_CACHE_TTL_SECONDS = 6 * 60 * 60
 // Skip caching values larger than this — keeps writes safely under the hosted-Redis
 // (Upstash) per-request size ceiling. Library blobs are gzipped, so this is generous.
 const MAX_CACHE_VALUE_BYTES = 900 * 1024
+// Streams sharing a bingeGroup tell Stremio the next episode continues from the same
+// source, so it can advance without re-resolving. A season pack is one TorBox item, so
+// every episode in it naturally lands in the same group — and the seamless transition
+// appears to carry player state (including the loaded subtitle track) into the next
+// episode. Set BINGE_GROUP_PER_EPISODE=1 to scope the group per episode instead: the
+// transition stops being seamless, but each episode re-resolves from scratch.
+const BINGE_GROUP_PER_EPISODE = process.env.BINGE_GROUP_PER_EPISODE === '1'
+
 const CATALOG_PAGE_SIZE = 100
 const VIDEO_EXTENSIONS = new Set(['.mkv', '.mp4', '.avi', '.mov', '.m4v', '.webm', '.ts', '.flv'])
 const MIN_FILE_SIZE_BYTES = 500 * 1024 * 1024
@@ -110,6 +118,7 @@ module.exports = {
   TORBOX_MAX_PAGES,
   MAX_CACHE_VALUE_BYTES,
   CATALOG_PAGE_SIZE,
+  BINGE_GROUP_PER_EPISODE,
   VIDEO_EXTENSIONS,
   MIN_FILE_SIZE_BYTES,
   SUBTITLE_EXTENSIONS,

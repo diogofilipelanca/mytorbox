@@ -5,7 +5,7 @@ process.env.TRUST_PROXY_HOPS = '0'
 
 const { parseSubtitleItems, parseWorkItems, languageFromFilename, makeGuessResolver } = require('../src/parser')
 const { decodeSubtitle, validCoordinates, contentTypeFor } = require('../src/subfile')
-const { localSubtitles, uniqueSubtitleName } = require('../src/subtitles')
+const { localSubtitles, uniqueSubtitleName, getSubtitles } = require('../src/subtitles')
 const tmdb = require('../src/tmdb')
 const { buildLibrary } = require('../src/library')
 
@@ -199,6 +199,40 @@ test('two episodes in one pack get distinct filenames and track ids', () => {
   assert.ok(ep2[0].id.includes('2-2'))
 })
 
+// Stremio derives the `filename` extra from the last path segment of the stream URL.
+// TorBox puts its credential in that URL's query string, so the value Stremio sends back
+// contains the user's API key. It must never leave this server.
+test('the filename extra is never forwarded to the subtitle provider', async () => {
+  const seen = []
+  const realFetch = globalThis.fetch
+  globalThis.fetch = async (url) => {
+    seen.push(String(url))
+    return { ok: true, status: 200, json: async () => ({ subtitles: [] }) }
+  }
+  try {
+    await getSubtitles({
+      type: 'series',
+      id: 'tb:custom:series:tt0137523:2:5',
+      keys: { torboxKey: 'k', tmdbKey: 't' },
+      extra: {
+        videoHash: '1edf58c46f910ce8',
+        videoSize: '721640080',
+        filename: 'requestdl?token=SUPER-SECRET-TORBOX-KEY&torrent_id=62554954&file_id=15',
+      },
+    })
+  } finally {
+    globalThis.fetch = realFetch
+  }
+
+  assert.ok(seen.length > 0, 'upstream should have been called')
+  for (const url of seen) {
+    assert.ok(!url.includes('SUPER-SECRET-TORBOX-KEY'), `credential leaked to upstream: ${url}`)
+    assert.ok(!url.toLowerCase().includes('filename'), `filename forwarded: ${url}`)
+    assert.ok(!url.includes('requestdl'), `stream URL fragment forwarded: ${url}`)
+  }
+  assert.ok(seen.some((u) => u.includes('videoHash=')), 'safe hints should still be forwarded')
+})
+
 test('uniqueSubtitleName keeps the extension and survives odd names', () => {
   assert.equal(uniqueSubtitleName({ filename: 'english.srt', itemId: 1, fileId: 2 }), 'english-1-2.srt')
   assert.equal(uniqueSubtitleName({ filename: 'pt-BR.ass', itemId: 9, fileId: 4 }), 'pt-BR-9-4.ass')
@@ -225,4 +259,35 @@ test('local subtitle URLs work without a config path (defaults mode)', () => {
     { baseUrl: 'https://addon.example', configPath: null }
   )
   assert.equal(out[0].url, 'https://addon.example/subfile/webdl/7/1/english-7-1.srt')
+})
+
+// --- bingeGroup scoping ---
+
+test('bingeGroup is shared across a pack by default, per-episode when toggled', async () => {
+  const { execFileSync } = require('node:child_process')
+  const probe = `
+    const { buildLibrary } = require('${process.cwd()}/src/library')
+    const tmdb = require('${process.cwd()}/src/tmdb')
+    tmdb.search = async () => null; tmdb.getImages = async () => null
+    const entry = ${JSON.stringify(seasonPackEntry())}
+    buildLibrary('k','t',null,{torrents:[entry],webdl:[]},null).then(lib => {
+      const id = Object.keys(lib.meta).find(k => k.startsWith('tb:series:'))
+      console.log(JSON.stringify([
+        lib.streams[id+':2:1'][0].behaviorHints.bingeGroup,
+        lib.streams[id+':2:2'][0].behaviorHints.bingeGroup,
+      ]))
+    })
+  `
+  const run = (env) =>
+    JSON.parse(execFileSync(process.execPath, ['-e', probe], {
+      env: { ...process.env, ...env }, encoding: 'utf8',
+    }).trim().split('\n').pop())
+
+  const [d1, d2] = run({ BINGE_GROUP_PER_EPISODE: '0' })
+  assert.equal(d1, d2, 'default: one group for the whole pack')
+
+  const [s1, s2] = run({ BINGE_GROUP_PER_EPISODE: '1' })
+  assert.notEqual(s1, s2, 'toggled: one group per episode')
+  assert.match(s1, /s2e1$/)
+  assert.match(s2, /s2e2$/)
 })
